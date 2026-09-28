@@ -18,6 +18,7 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 
 - Use **JAX** for all ML and RL code (models, training loops, rollouts).
 - Environments come from **JAXAtari** (`jaxatari.make("pong")`); keep the pipeline in JAX so environment steps and model updates can be `jax.jit`-compiled and `jax.vmap`-ed.
+- Use the **object-centric (OC) inputs** of JAXAtari, not pixel observations: models work on the per-object state (e.g. positions and sizes of the paddles and the ball), obtained via JAXAtari's object-centric wrappers (`AtariWrapper` followed by `ObjectCentricWrapper`) or its structured OC observations.
 - Handle randomness explicitly with `jax.random` keys; split keys instead of reusing them.
 - Prefer JAX-ecosystem libraries (e.g. Flax, Optax) over non-JAX frameworks. Do not introduce PyTorch or TensorFlow.
 
