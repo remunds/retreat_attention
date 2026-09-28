@@ -1,0 +1,10 @@
+[project]
+name = "retreat"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "jaxatari",
+]
+
+[tool.uv.sources]
+jaxatari = { git = "https://github.com/k4ntz/JAXAtari.git" }
