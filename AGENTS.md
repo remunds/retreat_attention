@@ -21,9 +21,34 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 - Handle randomness explicitly with `jax.random` keys; split keys instead of reusing them.
 - Prefer JAX-ecosystem libraries (e.g. Flax, Optax) over non-JAX frameworks. Do not introduce PyTorch or TensorFlow.
 
+## GPU usage
+
+- You may use **only GPUs 4 and 5**. Never use any other GPU on this machine.
+- Occupy **at most 2 GPUs at the same time**, across all running jobs combined.
+- Always set `CUDA_VISIBLE_DEVICES` explicitly when running code, e.g. `CUDA_VISIBLE_DEVICES=4 uv run experiment_x.py` or `CUDA_VISIBLE_DEVICES=4,5 uv run experiment_x.py`. Never run JAX code without it, since JAX would otherwise grab every visible GPU.
+- Check `nvidia-smi` before starting a job, and do not start new GPU jobs while your earlier ones are still using both allowed GPUs.
+
 ## Experiments
 
 - For every new experiment setup (e.g. a new methodological approach, model architecture, or training scheme), **create a new file** rather than modifying an existing experiment.
 - Give the file a descriptive name (e.g. `experiment_slot_attention.py`) and start it with a docstring explaining the approach and how it differs from earlier ones.
 - Existing experiment files stay runnable so results remain reproducible and comparable.
 - Shared, stable code (e.g. data collection, evaluation on the `lazy_enemy` mod) can be moved into common modules once it is used by more than one experiment.
+- Feel free to try several different approaches. For each one, check that it actually learns (e.g. falling training and validation loss, accurate rollouts) and then evaluate its robustness as described below.
+
+### Experiment documentation
+
+Every experiment file gets an accompanying Markdown file with the same name (e.g. `experiment_slot_attention.py` → `experiment_slot_attention.md`). It must contain:
+
+- **Goal:** what the experiment is trying to achieve.
+- **Research question:** the specific question the experiment answers.
+- **Experiments:** which runs were done, with their configurations and the exact commands used.
+- **Results:** a summary of the outcomes, including key numbers (losses, scores with and without `lazy_enemy`) and what they mean for the research question.
+
+Keep this file up to date as runs finish, and commit it together with the code.
+
+## Robustness evaluation with `lazy_enemy`
+
+- The JAXAtari **`lazy_enemy`** mod can be used to check whether a learned world model is robust to changed object dynamics (see `project.md`; the goal is an actor scoring more than 10 points with the mod active).
+- **NEVER train on `lazy_enemy`.** Do not use it for training data, for training the world model or the actor, for tuning hyperparameters, or for model selection. It is for validation only.
+- All training uses the unmodified Pong environment. `lazy_enemy` is only used to evaluate finished models.
