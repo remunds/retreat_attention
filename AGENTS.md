@@ -2,6 +2,13 @@
 
 Guidelines for coding agents working in this repository. See `project.md` for the project goals.
 
+## Goal and stopping criterion
+
+- Your task is finished **only** when an actor trained inside a learned world model is robust to the `lazy_enemy` modification: with `lazy_enemy` active, it must score **more than 10 points per game on average**, over at least 10 evaluation episodes with different random seeds.
+- Do not stop before this is reached. If an approach falls short, document the result in its experiment Markdown file, work out why it failed, and try a new approach in a new experiment file. Do not stop just because one approach failed, or to hand a partial result back.
+- The criterion must be met under all the rules below. In particular, the world model and the actor are trained only on unmodified Pong, and every design decision is based on unmodified Pong (see "Robustness evaluation with `lazy_enemy`"). An actor that reaches the score only because `lazy_enemy` leaked into training, tuning, or model selection does not count.
+- When the criterion is met, record the final numbers (scores with and without `lazy_enemy`, number of episodes, seeds) and the exact commands to reproduce them in the experiment's Markdown file, then commit and push.
+
 ## Git workflow
 
 - Work **only** on the branch `raban`. If it does not exist yet, create it (`git checkout -b raban`); otherwise switch to it (`git checkout raban`). Never commit to `main` or any other branch.
