@@ -225,11 +225,38 @@ Enemy bounces cluster tightly at dy≈0 (15 of 22, since it actively tracks the 
 
 Visualized alongside the gating results in the [Gating Diagnostics artifact](https://claude.ai/artifact/XyKZhMQoxKCaWZ1LcwPm4L) (return-rate stacked bar + dy-histogram comparison).
 
+## An "intermediate agent" fixes the data problem — and reveals the confound just moves
+
+Implemented the suggestion above: `world_model/policies.py` adds `track_ball_policy` (mirrors the enemy AI's own logic — move toward the ball's y — using the game's own action mapping, empirically verified: action 2 moves the paddle up, action 3 down) and `epsilon_track_ball_policy` (mostly tracks, `epsilon=0.2` uniform-random for exploration diversity, so the data isn't perfectly deterministic). `world_model/data.py` takes a `--policy` flag; default (`random`) is unchanged, so every prior result stays reproducible.
+
+Collected a fresh 20k-step rollout with `epsilon_track_ball`. **The data problem is completely fixed**:
+
+```
+                     random policy              epsilon_track_ball policy
+player:   16 bounces,  113 misses (12.4%)  ->   87 bounces,    1 misses (98.9%)
+enemy :   22 bounces,    6 misses (78.6%)  ->   88 bounces,   20 misses (81.5%)
+```
+
+Only one episode occurred in the whole 20k steps this time (rallies now last long, instead of ending almost immediately) — 87 clean player bounces instead of 16, and the contact-point distribution tightened a lot (std 3.63 vs. 5.71 before), since the paddle is now usually near the ball instead of wherever chance left it.
+
+**But retraining the gated linear-head model on this new data doesn't fix the gate — it moves the confound to the other paddle.** Ball's attention now goes overwhelmingly to **"player"** (0.88 at epoch 50, up from tiny before) instead of "enemy". Re-running the court-position check:
+
+```
+Attention breakdown for 'ball', trained on epsilon_track_ball data:
+  near enemy  (x<40)       (n= 3621): player=0.95, enemy=0.02, null=0.03
+  mid-court (40<=x<=120)   (n=13599): player=0.85, enemy=0.05, null=0.10
+  near player (x>120)      (n= 2777): player=0.91, enemy=0.02, null=0.07
+```
+
+Still flat, still ~0.85–0.95 everywhere — including right next to the *enemy's* paddle, where "player" should now be the irrelevant one. **The underlying mechanism is the same as before, just relocated**: any paddle that consistently tracks the ball (previously only the enemy AI; now also the player, by construction of the new policy) makes its own y-position a globally-useful proxy for recent ball movement, and the gate keeps preferring "copy whichever paddle is a good ball-trajectory proxy" over "attend to whichever paddle is spatially near me right now" — regardless of which specific paddle currently has that property. Better data fixed the *data-scarcity* problem cleanly, but the *gate's preference for a global shortcut over a genuinely conditional rule* turns out to be a separate, deeper issue that persists across both dataset regimes.
+
+One interesting side effect, worth noting rather than chasing further right now: the enemy predictor's attention on "ball" (0.47, entropy dropped to 0.047) is now plausibly *correct*, not a shortcut — the enemy AI's own logic genuinely is `direction = sign(ball_y - enemy_y)`, so "enemy depends on ball" is the real mechanism, not a confound. Distinguishing a genuinely-improved dependency from a relocated confound is exactly why the court-position (or, better, an actual intervention) check has to be run on *every* target, not just the one that looked wrong last time.
+
 ## Next steps
 
-- **The random-policy data collection itself may be the actual blocker**, not the gate. A policy that returns the ball more often (even a simple heuristic "track the ball" player policy, mirroring what the enemy AI already does) would give the player predictor dramatically more — and cleaner — bounce examples to learn from. Worth trying before any further gate-architecture change: retrain on data from a better player policy and see whether "player" becomes a competitive candidate without touching the gate at all.
-- Given the distance-bias finding, a purely suppressive distance term is structurally limited to reallocating away from things that are far, not toward things that are close, when the close candidate never developed a useful signal to begin with — with the explicit caveat from that session (don't over-bias, distance won't matter the same way in every game) staying in force, worth thinking about what would let the "correct" candidate develop a competitive raw score in the first place, rather than pushing the distance term harder. The data-scarcity finding above suggests the answer may simply be "give it better data," not "change the architecture."
-- Re-run the `inspect_gate.py` court-position check after any further change before trusting any resulting numbers — standing rule.
+- **This is now real evidence that the confound is structural, not just a data-availability artifact.** Both the "give it a proximity feature" and "give it better data" fixes independently ran into the same failure mode: the gate favors whichever candidate is *globally* the best proxy for the target's outcome over one that's *conditionally* relevant. That points toward needing to test at the moment of an actual bounce specifically (not just "which side of the court"), or toward approach A's hard/discrete gating, more than toward further data or feature engineering.
+- **Actually wiring up `lazy_enemy` (or an analogous "lazy player" mod) is now the more informative test than ever**: since the enemy's "ball" dependency now looks plausibly genuine (not confounded), checking whether it survives `lazy_enemy` intervention — versus checking whether the ball's "player"/"enemy" dependency degrades correctly under the same intervention — would cleanly separate real dependencies from relocated shortcuts, which the static court-position check alone can no longer fully do (it already caught one shortcut moving to a new home).
+- Re-run the `inspect_gate.py` court-position check (and the return-rate check) on every future variant before trusting any resulting numbers — standing rule, now doubly confirmed necessary.
 - Stop annealing temperature once validation MSE stops improving (player's linear-head run got *worse* past its epoch-30 optimum as temperature kept dropping) — an early-stopping or MSE-monitoring criterion on the anneal schedule, rather than a fixed epoch-based one.
 - The real test the confound-check above stands in for is the project's actual success criterion: **run the same court-position-style diagnostic under an actual intervention (e.g. `lazy_enemy`)** rather than only checking correlation with static position. A dependency that's genuinely about paddle proximity should degrade gracefully under `lazy_enemy`; a confounded one (like the current `ball → enemy` shortcut) should break, since `enemy_y` would no longer track the ball the same way. This is the first point where actually wiring up the `lazy_enemy` mod and re-evaluating would answer something we can't get from validation MSE alone.
 - If neither of those closes the gap, that's real evidence for moving to approach A (hard/discrete gating, e.g. Gumbel-Softmax or straight-through top-k) — it's not obviously guaranteed to fix the "confident but wrong" issue either, but it's the more direct way to test whether the problem is soft-attention-specific or more fundamental to how the gate is supervised.
