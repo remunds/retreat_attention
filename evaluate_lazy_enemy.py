@@ -130,10 +130,14 @@ def main():
                    f"{args.ckpt} on {name}")
         print(f"{name}: player {ps.mean():.2f} +- {ps.std():.2f}, enemy {es.mean():.2f}, finished {np.asarray(over).mean():.2f}")
         print(json.dumps(results[name]["wm_rmse_px"], indent=1))
+    for name in ("pong", "lazy_enemy"):
+        results[name]["final_score_mean"] = results[name]["player_mean"] - results[name]["enemy_mean"]
+    ok = results["lazy_enemy"]["final_score_mean"] >= 10
+    print(f"final score (player - enemy): pong {results['pong']['final_score_mean']:+.2f}, "
+          f"lazy_enemy {results['lazy_enemy']['final_score_mean']:+.2f}")
     with open(os.path.join(out_dir, "lazy_enemy_eval.json"), "w") as f:
         json.dump(results, f, indent=1)
-    ok = results["lazy_enemy"]["player_mean"] > 10
-    print(f"lazy_enemy criterion (> 10 points per game on average over {args.games} games): {'MET' if ok else 'NOT met'}")
+    print(f"lazy_enemy criterion (final score >= +10 on average over {args.games} games): {'MET' if ok else 'NOT met'}")
 
 
 if __name__ == "__main__":

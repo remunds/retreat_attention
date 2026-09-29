@@ -9,6 +9,9 @@ Train an actor **entirely inside a learned world model**, where the world model 
 data from **unmodified Pong** (JAXAtari object-centric inputs), so that the actor scores **more than
 10 points per game** in Pong with the `lazy_enemy` mod active (which it never sees during training).
 
+> Note: the success criterion was later clarified as a **final score (agent points minus enemy
+> points) of at least +10**, i.e. the agent has to win. See the results below.
+
 ## Research question
 
 Can a world model with per-object predictions and sparse, per-step gated interactions, trained on
@@ -71,7 +74,9 @@ Held-out evaluation of the selected checkpoint (round 2, greedy), 32 games each:
 | Pong (unmodified) | 21.00 ± 0.00 | 2.03 | 32 / 32 |
 | **`lazy_enemy`** | **12.62 ± 2.81** (min 7, max 18) | 21.00 | 25 / 32 |
 
-**The success criterion (> 10 points per game on average with `lazy_enemy`) is met: 12.62.**
+This met the originally written criterion (> 10 points per game: 12.62), but **not the clarified
+criterion**: the final score with `lazy_enemy` is 12.62 - 21.00 = **-8.38** (the actor loses every
+game), versus +18.97 on unmodified Pong. Experiment 2 (`experiment_intervention_actor.md`) addresses this.
 
 World-model open-loop RMSE in pixels on trajectories of the actor (1 / 10 steps ahead):
 

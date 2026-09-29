@@ -4,7 +4,7 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 
 ## Goal and stopping criterion
 
-- Your task is finished **only** when an actor trained inside a learned world model is robust to the `lazy_enemy` modification: with `lazy_enemy` active, it must score **more than 10 points per game on average**, over at least 10 evaluation episodes with different random seeds.
+- Your task is finished **only** when an actor trained inside a learned world model is robust to the `lazy_enemy` modification: with `lazy_enemy` active, it must reach a **final score of at least +10** on average, over at least 10 full games with different random seeds. The final score is the Pong score: the agent's points minus the enemy's points at the end of a game (e.g. 21 : 11 = +10). The agent therefore has to win, and win clearly; scoring 10 points in a lost game does not count.
 - Do not stop before this is reached. If an approach falls short, document the result in its experiment Markdown file, work out why it failed, and try a new approach in a new experiment file. Do not stop just because one approach failed, or to hand a partial result back.
 - The criterion must be met under all the rules below. In particular, the world model and the actor are trained only on unmodified Pong, and every design decision is based on unmodified Pong (see "Robustness evaluation with `lazy_enemy`"). An actor that reaches the score only because `lazy_enemy` leaked into training, tuning, or model selection does not count.
 - When the criterion is met, record the final numbers (scores with and without `lazy_enemy`, number of episodes, seeds) and the exact commands to reproduce them in the experiment's Markdown file, then commit and push.
@@ -57,6 +57,6 @@ Keep this file up to date as runs finish, and commit it together with the code.
 
 ## Robustness evaluation with `lazy_enemy`
 
-- The JAXAtari **`lazy_enemy`** mod can be used to check whether a learned world model is robust to changed object dynamics (see `project.md`; the goal is an actor scoring more than 10 points with the mod active).
+- The JAXAtari **`lazy_enemy`** mod can be used to check whether a learned world model is robust to changed object dynamics (see `project.md`; the goal is an actor reaching a final score (own points minus enemy points) of at least +10 with the mod active).
 - **NEVER train on `lazy_enemy`.** Do not use it for training data, for training the world model or the actor, for tuning hyperparameters, or for model selection. It is for validation only.
 - All training uses the unmodified Pong environment. `lazy_enemy` is only used to evaluate finished models.

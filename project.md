@@ -52,7 +52,7 @@ This makes the model's reasoning something we can check. In Pong, we would expec
 
 We test robustness by changing how an object moves at inference time, using the game modifications that come with JAXAtari. The main test is the **`lazy_enemy`** mod. In it, the enemy paddle only follows the ball while the ball is moving toward the enemy, and stays still otherwise. This is a change to one object's dynamics that the model never sees during training.
 
-**The project goal is met when the actor still scores more than 10 points in Pong with the `lazy_enemy` mod active.**
+**The project goal is met when the actor reaches a final score of at least +10 in Pong with the `lazy_enemy` mod active**, i.e. its points minus the enemy's points at the end of a game (for example 21 : 11). The actor has to win the game for that.
 
 ## Why this should help
 
