@@ -51,7 +51,7 @@ def analyze(data: dict):
         )
         if is_reset_jump:
             side = _side(ball_x[t - 1])
-            misses.append({"side": side})
+            misses.append({"side": side, "t": t})
             continue
 
         flipped_x = vel_x[t - 1] != 0 and vel_x[t] != 0 and np.sign(vel_x[t]) != np.sign(vel_x[t - 1])
@@ -59,7 +59,7 @@ def analyze(data: dict):
         if flipped_x and no_jump:
             side = _side(ball_x[t - 1])
             paddle_y = player_y[t - 1] if side == "player" else enemy_y[t - 1]
-            bounces.append({"side": side, "dy": float(ball_y[t - 1] - paddle_y)})
+            bounces.append({"side": side, "dy": float(ball_y[t - 1] - paddle_y), "t": t})
 
     return bounces, misses
 

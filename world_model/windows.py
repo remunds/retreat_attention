@@ -57,11 +57,14 @@ def build_joint_dataset(
     monotonic bias (see `gated_model.gate_forward`'s `distances` argument).
 
     Returns a dict: "own" (own flattened window, no action mixed in), "y"
-    (target), one entry per other-object name (its current-step state) [+
-    "<name>_distance" if `distance_fn` given], and, if `include_action`, an
-    "action" entry (raw action id, one per example) — kept separate from
-    "own" so it can be exposed as its own attention token rather than baked
-    into the predictor's input.
+    (target), "t" (the raw timestep each row's window ends at, i.e. row i
+    predicts `target_states[t[i] + 1]` — lets a row be cross-referenced
+    against a raw-trajectory event like a detected bounce), one entry per
+    other-object name (its current-step state) [+ "<name>_distance" if
+    `distance_fn` given], and, if `include_action`, an "action" entry (raw
+    action id, one per example) — kept separate from "own" so it can be
+    exposed as its own attention token rather than baked into the
+    predictor's input.
     """
     episode_ids = data["episode_ids"]
     actions = data.get("actions")
@@ -69,13 +72,14 @@ def build_joint_dataset(
     num_steps = target_states.shape[0] - 1
     other_names = [name for name in object_names if name != target_name]
 
-    own_xs, ys, acts = [], [], []
+    own_xs, ys, acts, ts = [], [], [], []
     other_xs = {name: [] for name in other_names}
     other_dists = {name: [] for name in other_names}
     for t in _valid_timesteps(episode_ids, window, num_steps):
         target_row = target_states[t]
         own_xs.append(target_states[t - window + 1 : t + 1].reshape(-1))
         ys.append(target_states[t + 1])
+        ts.append(t)
         for name in other_names:
             other_row = data[name][t]
             other_xs[name].append(other_row)
@@ -84,7 +88,7 @@ def build_joint_dataset(
         if include_action:
             acts.append(actions[t])
 
-    result = {"own": np.stack(own_xs), "y": np.stack(ys)}
+    result = {"own": np.stack(own_xs), "y": np.stack(ys), "t": np.array(ts, dtype=np.int64)}
     for name in other_names:
         result[name] = np.stack(other_xs[name])
         if distance_fn is not None:
