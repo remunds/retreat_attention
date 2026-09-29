@@ -32,6 +32,15 @@ the gate to pick the *correct* candidate rather than just *some* peaked one.
 no hidden layer) to test that hypothesis directly: with no nonlinearity to
 hide behind, a wrong context should cost real MSE, which should show up as
 the gate shifting weight toward the actually-useful candidate.
+
+A follow-up diagnostic (`inspect_gate.py`) then showed the ball predictor's
+sharpest learned dependency (on "enemy") was a spurious shortcut — attention
+stayed high regardless of which side of the court the ball was actually on,
+so the gate wasn't reading proximity at all. Every real-object candidate now
+gets an extra trailing feature via `world_model.objects.distance`: its
+current Euclidean distance to the target. This hands the gate a direct
+proximity signal instead of hoping it reconstructs "am I near this?" from
+raw, differently-scaled positions on its own.
 """
 
 import argparse
@@ -45,7 +54,7 @@ import optax
 
 from world_model.gated_model import VALUE_DIM, attention_entropy, gate_forward, init_gate_params
 from world_model.model import forward, init_linear_params, init_params, linear_forward
-from world_model.objects import OBJECT_DIMS
+from world_model.objects import OBJECT_DIMS, distance
 from world_model.windows import build_joint_dataset, split_indices
 
 WINDOW = 4
@@ -95,7 +104,9 @@ def train_object(
     include_action = target_name == "player"
     num_actions = int(data["actions"].max()) + 1
 
-    dataset = build_joint_dataset(data, target_name, WINDOW, list(OBJECT_DIMS), include_action=include_action)
+    dataset = build_joint_dataset(
+        data, target_name, WINDOW, list(OBJECT_DIMS), include_action=include_action, distance_fn=distance
+    )
     own, y = dataset["own"], dataset["y"]
     candidate_names = other_names + (["action"] if include_action else [])
     candidates_raw = {name: dataset[name] for name in other_names}

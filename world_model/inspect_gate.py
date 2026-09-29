@@ -16,7 +16,7 @@ import jax
 import numpy as np
 
 from world_model.gated_model import gate_forward
-from world_model.objects import OBJECT_DIMS
+from world_model.objects import OBJECT_DIMS, distance
 from world_model.windows import build_joint_dataset
 
 DEFAULT_DATA = Path("artifacts/rollout.npz")
@@ -59,7 +59,12 @@ def main():
     entry = checkpoint["objects"][args.target]
 
     dataset = build_joint_dataset(
-        data, args.target, checkpoint["window"], list(OBJECT_DIMS), include_action=entry["include_action"]
+        data,
+        args.target,
+        checkpoint["window"],
+        list(OBJECT_DIMS),
+        include_action=entry["include_action"],
+        distance_fn=distance,
     )
     weights = recompute_weights(entry, dataset)
     candidate_names = entry["candidate_names"] + ["null"]

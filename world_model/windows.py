@@ -40,16 +40,25 @@ def build_joint_dataset(
     window: int,
     object_names,
     include_action: bool = False,
+    distance_fn=None,
 ):
     """Same (own history -> next state) pairs as `build_dataset`, plus each
     OTHER object's current-step state at the same timestep, so a gate can
     decide per-example how much the target should depend on each of them.
 
+    If `distance_fn` is given (signature `(target_name, target_row, other_name,
+    other_row) -> float`), each other-object's row gets an extra trailing
+    column: the current distance between it and the target. This hands the
+    gate a direct proximity signal instead of making it reconstruct "am I
+    near this?" from raw, possibly differently-scaled positions on its own —
+    see solutions.md, this is what the ball->enemy confound diagnostic showed
+    was missing.
+
     Returns a dict: "own" (own flattened window, no action mixed in), "y"
-    (target), one entry per other-object name (its current-step state), and,
-    if `include_action`, an "action" entry (raw action id, one per example) —
-    kept separate from "own" so it can be exposed as its own attention token
-    rather than baked into the predictor's input.
+    (target), one entry per other-object name (its current-step state [+
+    distance]), and, if `include_action`, an "action" entry (raw action id,
+    one per example) — kept separate from "own" so it can be exposed as its
+    own attention token rather than baked into the predictor's input.
     """
     episode_ids = data["episode_ids"]
     actions = data.get("actions")
@@ -60,10 +69,15 @@ def build_joint_dataset(
     own_xs, ys, acts = [], [], []
     other_xs = {name: [] for name in other_names}
     for t in _valid_timesteps(episode_ids, window, num_steps):
+        target_row = target_states[t]
         own_xs.append(target_states[t - window + 1 : t + 1].reshape(-1))
         ys.append(target_states[t + 1])
         for name in other_names:
-            other_xs[name].append(data[name][t])
+            other_row = data[name][t]
+            if distance_fn is not None:
+                dist = distance_fn(target_name, target_row, name, other_row)
+                other_row = np.concatenate([other_row, [dist]])
+            other_xs[name].append(other_row)
         if include_action:
             acts.append(actions[t])
 

@@ -164,9 +164,27 @@ To eventually check whether any dependency-gating approach generalizes beyond Po
 
 **Not yet done**: `train.py`/`train_gated.py` still hardcode Pong's `OBJECT_DIMS` import and aren't parameterized by environment, so none of the gating experiments above have been run on Seaquest data yet — this was scoped as "add the environment + test set," not "port the training pipeline." That's a natural next step once Pong's gate-correctness problem (see above) is actually resolved, since retesting a fixed approach on a second domain before that would just double the noise.
 
+## Giving the gate an explicit distance feature — it got worse, not better
+
+Implemented the top next-step above: `world_model/objects.py` now has `object_xy`/`distance` (using the paddles' fixed x-constants, `PLAYER_X=140`/`ENEMY_X=16`, confirmed from `env.consts`), and `windows.build_joint_dataset` takes an optional `distance_fn` that appends each candidate's current Euclidean distance to the target as an extra trailing feature. `train_gated.py`/`inspect_gate.py` now pass this by default — no other code needed to change, since candidate dims are already read from the data's shape rather than hardcoded.
+
+Re-ran the exact same linear-head, 50-epoch, temperature-annealed setup with this feature added. Result: **the confound got more extreme, not fixed.**
+
+```
+Attention breakdown for 'ball' (n=19977 examples), WITH the distance feature:
+  near enemy  (x<40)       (n=  924): player=0.00, enemy=1.00, null=0.00
+  mid-court (40<=x<=120)   (n=14567): player=0.01, enemy=0.89, null=0.10
+  near player (x>120)      (n= 4486): player=0.00, enemy=1.00, null=0.00
+```
+
+Attention on "enemy" is now ~1.00 in *every* bucket, including near the player's side — worse than before (was 0.93–0.95). Entropy also dropped further (0.62 → 0.12 at epoch 50) — the gate got *more* confident in the same wrong answer. Handing it `distance-to-enemy` as a raw input feature didn't teach it "attend to whichever candidate is closest" as a general rule; it just gave the existing `enemy_y`-as-ball-proxy shortcut an even richer feature to exploit (distance-to-enemy is itself correlated with recent ball trajectory, via the same confound, so it's *more* informative on average, not more *targeted*), and the optimization leaned on it harder instead of learning to condition on it.
+
+**Why, most likely:** the architecture has no inductive bias tying "small distance" to "higher attention" — distance is just one more opaque number the key/value projections can use however they like. Nothing forces attention to actually *decrease monotonically* as distance grows; it's still fully at the mercy of whatever the loss landscape rewards, and evidently a strong-but-unconditional reliance on "enemy" is an easier optimum to find than the conditional, proximity-based rule we want.
+
 ## Next steps
 
-- **Give the gate a genuine proximity signal to key off, and check whether it learns to use it instead of the `enemy_y` shortcut.** Right now the ball's query/key only see current *positions*, not e.g. `ball_x` relative to each paddle's fixed x-coordinate — the model has to indirectly reconstruct "am I near a paddle" rather than being handed anything resembling it directly. Since `enemy_y` correlating with recent ball position is a real, exploitable shortcut, we may need either an explicit distance-style feature or a way to penalize/detect reliance on it, e.g. re-running `inspect_gate.py`-style court-position bucketing as a standard check on every future gated run, not just this one.
+- **Bias the attention score directly by distance, rather than feeding distance as an opaque input feature.** E.g. `score = query·key - w * distance` (`w` learned or fixed positive), so increasing distance mechanically suppresses that candidate's attention regardless of what the key/value projections have learned — this gives the "closer = more attended" rule as a structural bias instead of hoping the network discovers it unaided, which the experiment above showed it doesn't.
+- Re-run the `inspect_gate.py` court-position check after that change before trusting any resulting numbers — same standing rule as before.
 - Stop annealing temperature once validation MSE stops improving (player's linear-head run got *worse* past its epoch-30 optimum as temperature kept dropping) — an early-stopping or MSE-monitoring criterion on the anneal schedule, rather than a fixed epoch-based one.
 - The real test the confound-check above stands in for is the project's actual success criterion: **run the same court-position-style diagnostic under an actual intervention (e.g. `lazy_enemy`)** rather than only checking correlation with static position. A dependency that's genuinely about paddle proximity should degrade gracefully under `lazy_enemy`; a confounded one (like the current `ball → enemy` shortcut) should break, since `enemy_y` would no longer track the ball the same way. This is the first point where actually wiring up the `lazy_enemy` mod and re-evaluating would answer something we can't get from validation MSE alone.
 - If neither of those closes the gap, that's real evidence for moving to approach A (hard/discrete gating, e.g. Gumbel-Softmax or straight-through top-k) — it's not obviously guaranteed to fix the "confident but wrong" issue either, but it's the more direct way to test whether the problem is soft-attention-specific or more fundamental to how the gate is supervised.
