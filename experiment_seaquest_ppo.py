@@ -51,6 +51,15 @@ class ActorCritic(nn.Module):
 AC = ActorCritic()
 
 
+def apply_fn(params, obs):
+    """(logits, value) for raw stacked OC observations (..., FRAME_STACK, 284)."""
+    return AC.apply(params, sc.obs_features(obs))
+
+
+def init_fn(key):
+    return AC.init(key, jnp.zeros((1, sc.OBS_DIM)))
+
+
 def ACT_SAMPLE(params, obs, key):
     logits, _ = AC.apply(params, sc.obs_features(obs))
     return jax.random.categorical(key, logits)
@@ -75,7 +84,8 @@ def shaped_reward(cfg, g0, g1, env_done):
     return jnp.where(env_done, 0.0, r)  # the transition into an automatic reset carries no reward
 
 
-def make_train(cfg, env):
+def make_train(cfg, env, apply_fn=apply_fn, reward_fn=None):
+    reward_fn = reward_fn or shaped_reward
     tx = optax.chain(optax.clip_by_global_norm(cfg.max_grad_norm),
                      optax.adam(optax.linear_schedule(cfg.lr, cfg.lr * 0.1, cfg.updates * cfg.epochs * cfg.minibatches),
                                 eps=1e-5))
@@ -83,13 +93,13 @@ def make_train(cfg, env):
     def env_step(carry, key):
         params, obs, st = carry
         k_act, _ = jax.random.split(key)
-        logits, value = AC.apply(params, jax.vmap(sc.obs_features)(obs))
+        logits, value = apply_fn(params, obs)
         a = jax.random.categorical(k_act, logits)
         logp = jax.nn.log_softmax(logits)[jnp.arange(a.shape[0]), a]
         g0 = sc.game_state(st)
         obs2, st2, r, term, trunc, info = jax.vmap(env.step)(st, a)
         g1 = sc.game_state(st2)
-        rs = shaped_reward(cfg, g0, g1, info["env_done"])
+        rs = reward_fn(cfg, g0, g1, info["env_done"])
         done = jnp.logical_or(term, info["env_done"])  # life loss ends the value horizon
         tr = dict(obs=obs, a=a, logp=logp, v=value, r=rs, done=done,
                   env_r=info["env_reward"], rescue=(g1.successful_rescues > g0.successful_rescues) & ~info["env_done"],
@@ -109,7 +119,7 @@ def make_train(cfg, env):
         return adv, adv + traj["v"]
 
     def loss_fn(params, b):
-        logits, v = AC.apply(params, jax.vmap(sc.obs_features)(b["obs"]))
+        logits, v = apply_fn(params, b["obs"])
         logp_all = jax.nn.log_softmax(logits)
         logp = jnp.take_along_axis(logp_all, b["a"][:, None], -1)[:, 0]
         ratio = jnp.exp(logp - b["logp"])
@@ -123,7 +133,7 @@ def make_train(cfg, env):
     def update(params, opt_state, obs, st, key):
         key, k_roll = jax.random.split(key)
         (params, obs, st), traj = jax.lax.scan(env_step, (params, obs, st), jax.random.split(k_roll, cfg.T))
-        _, last_v = AC.apply(params, jax.vmap(sc.obs_features)(obs))
+        _, last_v = apply_fn(params, obs)
         adv, ret = gae(traj, last_v)
         n = cfg.T * cfg.num_envs
         data = dict(obs=traj["obs"].reshape(n, *traj["obs"].shape[2:]), a=traj["a"].reshape(n),
@@ -151,8 +161,9 @@ def make_train(cfg, env):
     return tx, jax.jit(update)
 
 
-def evaluate(env, params, key, games, max_steps, greedy):
-    act = ACT_GREEDY if greedy else ACT_SAMPLE
+def evaluate(env, params, key, games, max_steps, greedy, act_fns=None):
+    act_sample, act_greedy = act_fns or (ACT_SAMPLE, ACT_GREEDY)
+    act = act_greedy if greedy else act_sample
     out = sc.evaluate(env, act, max_steps, params, jax.random.split(key, games))
     out = {k: np.asarray(v) for k, v in out.items()}
     return dict(rescues=float(out["rescues"].mean()), rescues_per_game=out["rescues"].tolist(),
@@ -187,8 +198,13 @@ def get_parser():
     return ap
 
 
-def main(cfg=None, make_train_env=None, experiment=None):
-    """Train; `make_train_env(cfg)` builds the training environment (default: the base game)."""
+def main(cfg=None, make_train_env=None, experiment=None, agent=None, reward_fn=None):
+    """Train; `make_train_env(cfg)` builds the training environment (default: the base game).
+
+    `agent = (apply_fn, init_fn, act_sample, act_greedy)` replaces the MLP actor-critic, and
+    `reward_fn(cfg, g0, g1, env_done)` replaces the shaped reward (both default to this experiment's).
+    """
+    a_apply, a_init, a_sample, a_greedy = agent or (apply_fn, init_fn, ACT_SAMPLE, ACT_GREEDY)
     cfg = cfg or get_parser().parse_args()
     out_dir = os.path.join("runs", cfg.name)
     os.makedirs(out_dir, exist_ok=True)
@@ -205,8 +221,8 @@ def main(cfg=None, make_train_env=None, experiment=None):
     train_env = make_train_env(cfg) if make_train_env else env
     key = jax.random.PRNGKey(cfg.seed)
     key, k_init, k_env = jax.random.split(key, 3)
-    params = AC.init(k_init, jnp.zeros((1, sc.OBS_DIM)))
-    tx, update = make_train(cfg, train_env)
+    params = a_init(k_init)
+    tx, update = make_train(cfg, train_env, a_apply, reward_fn)
     opt_state = tx.init(params)
     obs, st = jax.vmap(train_env.reset)(jax.random.split(k_env, cfg.num_envs))
 
@@ -221,7 +237,8 @@ def main(cfg=None, make_train_env=None, experiment=None):
                 + f" ({time.time() - t0:.0f}s)")
         if (u + 1) % cfg.eval_every == 0 or u == cfg.updates - 1:
             key, k = jax.random.split(key)
-            ev = {g: evaluate(env, params, k, cfg.eval_games, cfg.eval_max_steps, g) for g in (False, True)}
+            ev = {g: evaluate(env, params, k, cfg.eval_games, cfg.eval_max_steps, g, (a_sample, a_greedy))
+                  for g in (False, True)}
             rnd = len(history)
             log(f"=== round {rnd} === update {u + 1}: base-game eval sample rescues {ev[False]['rescues']:.2f} "
                 f"divers {ev[False]['divers']:.1f} score {ev[False]['score']:.0f} | greedy rescues {ev[True]['rescues']:.2f} "

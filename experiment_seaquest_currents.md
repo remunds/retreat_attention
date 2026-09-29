@@ -42,4 +42,8 @@ CUDA_VISIBLE_DEVICES=4 uv run experiment_seaquest_currents.py --name sq_cur_a
 
 ## Results
 
-Run in progress.
+Stopped at update 375 (98M frames), together with S1: the MLP agent it builds on stalled at about
+0.1 rescues per base game. Base-game evaluation at update 250: 0.16 / 0.06 rescues per game (sampled
+/ greedy), 8.1 divers, score 427. So the currents did not hurt base-game learning early on. The same
+currents are used on top of the stronger object-attention agent in S4
+(`experiment_seaquest_attention_currents.py`). Not evaluated on `gravity`.
