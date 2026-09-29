@@ -94,6 +94,10 @@ header.board p { margin: 10px 0 0; color: var(--ink-2); max-width: 68ch; }
 .vid figcaption { display: grid; gap: 1px; }
 .vname { font: 600 13px/1.2 var(--f-display); }
 .video video { width: 100%; max-width: 100%; aspect-ratio: 320 / 696; background: #181a1e; border-radius: 6px; display: block; }
+.video.sq video { aspect-ratio: 320 / 504; }
+.videos.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gamebox { display: grid; gap: 6px; }
+.gamebox + .gamebox { border-top: 1px solid var(--line); padding-top: 10px; }
 .caption { font: 400 12px/1.4 var(--f-mono); color: var(--muted); overflow-wrap: anywhere; }
 .novideo { aspect-ratio: 3 / 1.4; max-width: 100%; border: 1px dashed var(--line); border-radius: 6px; display: grid; place-items: center;
   color: var(--muted); font-size: 13px; text-align: center; padding: 16px; }
@@ -132,11 +136,13 @@ footer code { background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
 <div class="wrap">
   <header class="board">
     <div>
-      <div class="eyebrow">Object-centric Pong world model · JAXAtari</div>
+      <div class="eyebrow">Object-centric agents · JAXAtari · held-out game modifications</div>
       <h1>Retreat Attention experiments</h1>
-      <p>Every experiment trains a world model and an actor on unmodified Pong only. The held-out test is the
-        <code>lazy_enemy</code> mod, where the enemy paddle only follows the ball while the ball moves towards it.
-        The goal is a final score (agent points minus enemy points) of at least +10 there, averaged over at least 10 games.</p>
+      <p><b>Seaquest (current):</b> agents are trained on the base game only. The held-out test is the
+        <code>gravity</code> mod, which slowly pulls the submarine down. The goal is to collect 6 divers and surface
+        with them at least twice per game there, averaged over at least 10 games.</p>
+      <p><b>Pong (done):</b> world model and actor trained on unmodified Pong only; held-out test <code>lazy_enemy</code>
+        (the enemy paddle only follows the ball while it approaches); goal: final score of at least +10.</p>
       <div class="meta" id="meta"></div>
     </div>
     <div class="goalbox" id="goalbox"></div>
@@ -148,7 +154,7 @@ footer code { background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
     <div>Built by <code>dashboard/build_dashboard.py</code> from the experiment files, their Markdown notes and <code>runs/</code>.
       To add an experiment, create <code>experiment_x.py</code> with <code>experiment_x.md</code> and rebuild:
       <code>CUDA_VISIBLE_DEVICES= uv run dashboard/build_dashboard.py</code>.</div>
-    <div>Videos use the newest checkpoint of each experiment's most recent run: the actor in the real lazy_enemy game, and the actor inside its own world model started from real Pong or real lazy_enemy histories. Lines connect each object to the objects its next-step prediction uses; opacity is the gate value.</div>
+    <div>Videos use the newest checkpoint of each experiment's most recent run. Pong: the actor in the real lazy_enemy game, and the actor inside its own world model started from real Pong or real lazy_enemy histories; lines connect each object to the objects its next-step prediction uses (opacity = gate value). Seaquest: the agent in the real base game and in the held-out gravity game, from the same seed.</div>
   </footer>
 </div>
 
@@ -326,7 +332,144 @@ function videoBlock(e) {
     <div class="caption">${esc(v.run)} · ${esc(v.label)} · ${who} · 450 agent steps each</div></div>`;
 }
 
+// ---------- Seaquest ----------
+const bestOf = (a, b) => Math.max(a ?? -1, b ?? -1);
+function latestGEval(e) {
+  const ev = e.runs.flatMap(r => (r.gevals || []).map(v => ({...v, run: r.name})));
+  ev.sort((a, b) => a.mtime - b.mtime);
+  return ev[ev.length - 1];
+}
+// Rescue rail: successful rescues per game, 0 .. 6, with the goal zone (>= 2).
+function sqRail(points, opts = {}) {
+  const W = 320, H = opts.big ? 58 : 50, x0 = 10, x1 = W - 10, y = opts.big ? 30 : 26, MAX = 6;
+  const X = v => x0 + Math.max(0, Math.min(MAX, v)) / MAX * (x1 - x0);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || "rescues per game")}">`;
+  s += `<rect x="${X(DATA.sq_target)}" y="${y - 9}" width="${X(MAX) - X(DATA.sq_target)}" height="18" fill="var(--target-wash)"/>`;
+  s += `<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="2"/>`;
+  for (let t = 0; t <= MAX; t++) {
+    const g = t === DATA.sq_target;
+    s += `<line x1="${X(t)}" x2="${X(t)}" y1="${y - 5}" y2="${y + 5}" stroke="${g ? "var(--target)" : "var(--muted)"}" stroke-width="${g ? 2 : 1}"/>`;
+    s += `<text x="${X(t)}" y="${y + 19}" text-anchor="middle" font-size="10" font-family="var(--f-mono)" fill="${g ? "var(--target)" : "var(--muted)"}">${t}${g ? " goal" : ""}</text>`;
+  }
+  const placed = [];
+  for (const p of points) {
+    if (p.v == null) continue;
+    const cx = X(p.v), clash = placed.some(q => Math.abs(q - cx) < 40);
+    placed.push(cx);
+    if (p.shape === "diamond")
+      s += `<path d="M${cx} ${y - 6} L${cx + 6} ${y} L${cx} ${y + 6} L${cx - 6} ${y} Z" fill="${p.color}" stroke="var(--surface)" stroke-width="2"><title>${esc(p.name)}: ${fmt(p.v)}</title></path>`;
+    else
+      s += `<circle cx="${cx}" cy="${y}" r="5" fill="${p.color}" stroke="var(--surface)" stroke-width="2"><title>${esc(p.name)}: ${fmt(p.v)}</title></circle>`;
+    if (!clash) s += `<text x="${cx}" y="${y - 12}" text-anchor="middle" font-size="11" font-weight="600" font-family="var(--f-mono)" fill="var(--ink)">${fmt(p.v)}</text>`;
+  }
+  return s + `</svg>`;
+}
+// Base-game rescues per game at every evaluation round (better of greedy / sampled).
+function sqSpark(run, id) {
+  const R = run.rounds.filter(r => r.rescues_sample != null || r.rescues_greedy != null);
+  if (!R.length) return "";
+  const W = 320, H = 92, l = 30, r = 40, t = 10, b = 20;
+  const vals = R.map(q => bestOf(q.rescues_sample, q.rescues_greedy));
+  const top = Math.max(3, Math.ceil(Math.max(...vals)));
+  const n = Math.max(R.length, 2);
+  const X = i => l + i / (n - 1) * (W - l - r), Y = v => t + (top - v) / top * (H - t - b);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Base-game rescues per game per evaluation, run ${esc(run.name)}">`;
+  for (const g of [0, DATA.sq_target, top]) {
+    s += `<line x1="${l}" x2="${W - r}" y1="${Y(g)}" y2="${Y(g)}" stroke="${g === DATA.sq_target ? "var(--target)" : "var(--line)"}" stroke-width="1" ${g === DATA.sq_target ? 'stroke-dasharray="4 3"' : ""}/>`;
+    s += `<text x="${l - 6}" y="${Y(g) + 3.5}" text-anchor="end" font-size="10" font-family="var(--f-mono)" fill="var(--muted)">${g}</text>`;
+  }
+  const pts = vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ");
+  if (vals.length > 1) {
+    s += `<polygon points="${X(0)},${Y(0)} ${pts} ${X(vals.length - 1)},${Y(0)}" fill="var(--player)" opacity="0.1"/>`;
+    s += `<polyline points="${pts}" fill="none" stroke="var(--player)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  const li = vals.length - 1;
+  s += `<circle cx="${X(li)}" cy="${Y(vals[li])}" r="4" fill="var(--player)" stroke="var(--surface)" stroke-width="2"/>`;
+  s += `<text x="${X(li) + 8}" y="${Y(vals[li]) + 4}" font-size="11" font-weight="600" font-family="var(--f-mono)" fill="var(--ink)">${fmt(vals[li])}</text>`;
+  const lastQ = R[R.length - 1];
+  s += `</svg>`;
+  return `<div class="spark"><div class="eyebrow">Base-game rescues per game at each evaluation · ${esc(run.name)}</div>${s}
+    <div class="caption">${R.length} evaluations · latest: update ${lastQ.update ?? "?"}, divers ${fmt(bestOf(lastQ.divers_sample, lastQ.divers_greedy), 1)}/game, score ${fmt(bestOf(lastQ.score_sample, lastQ.score_greedy), 0)}</div></div>`;
+}
+function sqTiles(e) {
+  const ev = latestGEval(e);
+  const runs = e.runs.filter(r => r.rounds.length);
+  const last = runs[runs.length - 1];
+  const T = [];
+  if (ev) {
+    T.push([`<span class="${ev.gravity_rescues >= DATA.sq_target ? "good" : ""}">${fmt(ev.gravity_rescues)}</span>`, "gravity rescues/game",
+      `${ev.gravity_games_2 ?? "?"}/${ev.games} games with ≥2`]);
+    T.push([fmt(ev.base_rescues), "base rescues/game", `${ev.games} games`]);
+    T.push([fmt(ev.gravity_divers, 1), "gravity divers/game", `base ${fmt(ev.base_divers, 1)}`]);
+    T.push([fmt(ev.gravity_score, 0), "gravity score", `base ${fmt(ev.base_score, 0)}`]);
+  } else if (last) {
+    const q = last.rounds[last.rounds.length - 1];
+    T.push([fmt(bestOf(q.rescues_sample, q.rescues_greedy)), "base rescues/game", `${last.name}, update ${q.update ?? "?"}`]);
+    T.push([fmt(bestOf(q.divers_sample, q.divers_greedy), 1), "base divers/game", ""]);
+    T.push([fmt(bestOf(q.score_sample, q.score_greedy), 0), "base score", ""]);
+  }
+  if (!T.length) return "";
+  return `<div class="tiles">${T.map(([v, l, s]) => `<div class="tile"><div class="eyebrow">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("")}</div>`;
+}
+function sqRunsTable(e) {
+  if (!e.runs.length) return "";
+  const rows = [...e.runs].reverse().map(r => {
+    const ev = (r.gevals || [])[(r.gevals || []).length - 1];
+    let prog;
+    if (r.running) prog = `<span class="pill running">${esc(r.activity || "running")}</span>`;
+    else prog = r.rounds.length ? `${r.rounds.length} evaluations` : "started";
+    const best = r.rounds.length ? Math.max(...r.rounds.map(q => bestOf(q.rescues_sample, q.rescues_greedy))) : null;
+    return `<tr><td class="runname">${esc(r.name)}</td><td>${prog}</td>
+      <td class="num">${ev ? fmt(ev.base_rescues) : (best != null ? fmt(best) + " <span title='best evaluation during training'>(train)</span>" : "–")}</td>
+      <td class="num ${ev && ev.gravity_rescues >= DATA.sq_target ? "pos" : ""}">${ev ? fmt(ev.gravity_rescues) : "–"}</td>
+      <td class="num">${ago(r.mtime)}</td></tr>`;
+  }).join("");
+  return `<div class="tablewrap"><table class="runs"><thead><tr><th>Run</th><th>Progress</th><th>Base rescues</th><th>gravity rescues</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+const SQ_VIEWS = [
+  ["real_base", "Real game · base Seaquest", "the agent in the training game"],
+  ["real_gravity", "Real game · gravity", "the agent in the held-out gravity game (evaluation only)"],
+];
+function sqVideoBlock(e) {
+  const v = e.video;
+  if (!v || v.error) return `<div class="novideo">${v && v.error ? "Videos could not be rendered: " + esc(v.error) : "No checkpoint yet, so no videos."}</div>`;
+  const cells = SQ_VIEWS.filter(([k]) => v.views[k]).map(([k, name, desc]) => {
+    const d = v.views[k], st = d.stats || {};
+    return `<figure class="vid"><figcaption><span class="vname">${name}</span><span class="caption">rescues ${st.rescues ?? "?"} · lives lost ${st.lives_lost ?? "?"} · score ${st.score ?? "?"}</span></figcaption>
+      <video src="${esc(d.src)}" muted loop autoplay playsinline controls preload="metadata" title="${esc(desc)}"></video></figure>`;
+  }).join("");
+  return `<div class="video sq"><div class="videos two">${cells}</div>
+    <div class="caption">${esc(v.run)} · ${esc(v.label)} · ${v.greedy ? "greedy" : "sampling"} agent · ${v.steps ?? "?"} agent steps each, same seed</div></div>`;
+}
+function sqCard(e) {
+  const ev = latestGEval(e);
+  const runs = e.runs.filter(r => r.rounds.length);
+  const last = runs[runs.length - 1];
+  const railBlock = ev ? `<div class="rail"><div class="eyebrow">Successful rescues per game, ${esc(ev.run)} (${ev.games} games each)</div>
+      ${sqRail([{v: ev.base_rescues, name: "Base game", color: "var(--player)"}, {v: ev.gravity_rescues, name: "gravity (held out)", color: "var(--enemy)", shape: "diamond"}])}
+      <div class="legend"><span><i style="background:var(--player);border-radius:50%"></i>Base game</span><span><i style="background:var(--enemy);transform:rotate(45deg) scale(.8)"></i>gravity (held out)</span></div></div>` : "";
+  const details = [["Goal", e.goal], ["Setup", e.setup], ["Results", e.results]].filter(([, v]) => v)
+    .map(([h, v]) => `<div class="sechead">${h}</div><div>${md(v)}</div>`).join("");
+  return `<article class="card is-${e.status}" data-status="${e.status}" id="${esc(e.module)}">
+    <div class="card-head">
+      <div class="eyebrow">Seaquest · ${e.number != null ? "Experiment " + e.number : "Experiment"} · updated ${ago(e.updated)}</div>
+      <span class="pill ${e.status}">${STATUS[e.status] || e.status}</span>
+      <h2>${esc(e.title.replace(/^Experiment S?\d+[^:]*:\s*/, ""))}</h2>
+      <div class="files">${esc(e.py)}${e.md ? " · " + esc(e.md) : " · no Markdown notes yet"}</div>
+    </div>
+    ${e.summary ? `<div class="summary md">${md(e.summary)}</div>` : ""}
+    ${e.question ? `<div class="rq"><div class="eyebrow">Research question</div><div class="md">${md(e.question)}</div></div>` : ""}
+    ${sqVideoBlock(e)}
+    ${railBlock}
+    ${sqTiles(e)}
+    ${last ? sqSpark(last) : ""}
+    ${sqRunsTable(e)}
+    ${details ? `<details><summary>Goal, setup and full results</summary><div class="md">${details}</div></details>` : ""}
+  </article>`;
+}
+
 function card(e) {
+  if (e.game === "seaquest") return sqCard(e);
   const ev = latestEval(e);
   const full = e.runs.filter(r => r.kind === "full" && r.rounds.length);
   const lastFull = full[full.length - 1];
@@ -337,7 +480,7 @@ function card(e) {
     .map(([h, v]) => `<div class="sechead">${h}</div><div>${md(v)}</div>`).join("");
   return `<article class="card is-${e.status}" data-status="${e.status}" id="${esc(e.module)}">
     <div class="card-head">
-      <div class="eyebrow">${e.number != null ? "Experiment " + e.number : "Experiment"} · updated ${ago(e.updated)}</div>
+      <div class="eyebrow">Pong · ${e.number != null ? "Experiment " + e.number : "Experiment"} · updated ${ago(e.updated)}</div>
       <span class="pill ${e.status}">${STATUS[e.status] || e.status}</span>
       <h2>${esc(e.title.replace(/^Experiment \d+:\s*/, ""))}</h2>
       <div class="files">${esc(e.py)}${e.md ? " · " + esc(e.md) : " · no Markdown notes yet"}</div>
@@ -357,16 +500,26 @@ function render() {
   const E = DATA.experiments;
   document.getElementById("meta").innerHTML =
     `<span>Built ${esc(DATA.generated_iso.replace("T", " "))}</span>${DATA.git ? `<span>git ${esc(DATA.git)}</span>` : ""}<span>${E.length} experiments · ${E.reduce((a, e) => a + e.runs.length, 0)} runs</span>`;
+  const gev = E.flatMap(e => e.runs.flatMap(r => (r.gevals || []).map(v => ({...v, run: r.name, exp: e}))));
+  gev.sort((a, b) => b.gravity_rescues - a.gravity_rescues);
+  const gbest = gev[0];
+  const sqBox = gbest ? `<div class="gamebox">
+    <div class="eyebrow">Seaquest · best held-out gravity rescues per game so far</div>
+    <div class="row"><span class="big" style="color:${gbest.gravity_rescues >= DATA.sq_target ? "var(--good)" : "var(--ink)"}">${fmt(gbest.gravity_rescues)}</span>
+      <span class="sub">${esc(gbest.run)} · experiment ${gbest.exp.number ?? "?"} · base game ${fmt(gbest.base_rescues)} · ${gbest.gravity_games_2 ?? "?"}/${gbest.games} games with ≥2</span></div>
+    ${sqRail(gev.map(v => ({v: v.gravity_rescues, name: `${v.run} (exp. ${v.exp.number ?? "?"})`, color: v === gbest ? "var(--enemy)" : "var(--muted)", shape: "diamond"})).reverse(), {big: true, label: "held-out gravity rescues of all evaluated runs"})}
+    <div class="sub">Each diamond is one evaluated run on gravity. The shaded zone is the goal (2 or more rescues per game).</div></div>` :
+    `<div class="gamebox"><div class="eyebrow">Seaquest · no held-out gravity evaluation yet</div></div>`;
   const evals = E.flatMap(e => e.runs.flatMap(r => r.evals.map(v => ({...v, run: r.name, exp: e}))));
   evals.sort((a, b) => b.lazy_final - a.lazy_final);
   const best = evals[0];
-  document.getElementById("goalbox").innerHTML = best ? `
-    <div class="eyebrow">Best held-out lazy_enemy final score so far</div>
+  document.getElementById("goalbox").innerHTML = sqBox + `<div class="gamebox">` + (best ? `
+    <div class="eyebrow">Pong · best held-out lazy_enemy final score so far</div>
     <div class="row"><span class="big" style="color:${best.lazy_final >= DATA.target ? "var(--good)" : "var(--ink)"}">${sgn(best.lazy_final)}</span>
       <span class="sub">${esc(best.run)} · experiment ${best.exp.number ?? "?"} · ${fmt(best.lazy_player)} : ${fmt(best.lazy_enemy)} · won ${best.lazy_won}/${best.games} games</span></div>
     ${rail(evals.map(v => ({v: v.lazy_final, name: `${v.run} (exp. ${v.exp.number ?? "?"})`, color: v === best ? "var(--enemy)" : "var(--muted)", shape: "diamond"})).reverse(), {big: true, label: "held-out final scores of all evaluated runs"})}
     <div class="sub">Each diamond is one evaluated run on lazy_enemy. The shaded zone is the goal (+10 or more).</div>` :
-    `<div class="eyebrow">No held-out evaluation yet</div>`;
+    `<div class="eyebrow">No held-out evaluation yet</div>`) + `</div>`;
 
   const counts = {};
   E.forEach(e => { counts[e.status] = (counts[e.status] || 0) + 1; });

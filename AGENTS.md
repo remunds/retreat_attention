@@ -4,6 +4,24 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 
 ## Goal and stopping criterion
 
+### Current goal: Seaquest with the `gravity` mod
+
+- The task is finished **only** when an agent trained on the **base Seaquest game** (JAXAtari
+  `seaquest`, object-centric inputs) is robust to the JAXAtari Seaquest **`gravity`** mod
+  (`GravityMod`): with the mod active, the agent must **collect 6 divers and surface with them at
+  least 2 times per game** (the game's `successful_rescues` counter reaches 2 or more), on average
+  over at least 10 full games with different random seeds.
+- The `gravity` mod is held out exactly like `lazy_enemy`: **never** use it for training data, for
+  training any model or the agent, for tuning hyperparameters, for model selection, or for designing
+  interventions around its exact rule. Only the base game may be used. The mod is only for
+  evaluating finished, already-selected agents.
+- Every experiment must be visible in the dashboard (`dashboard/`, see `dashboard/README.md`):
+  rebuild it when runs finish and commit it with the experiment.
+- The same working rules as for Pong apply: don't stop after a failed approach; document each
+  approach in its own experiment file and Markdown file; record final numbers and commands.
+
+### Previous goal (met): Pong with `lazy_enemy`
+
 - Your task is finished **only** when an actor trained inside a learned world model is robust to the `lazy_enemy` modification: with `lazy_enemy` active, it must reach a **final score of at least +10** on average, over at least 10 full games with different random seeds. The final score is the Pong score: the agent's points minus the enemy's points at the end of a game (e.g. 21 : 11 = +10). The agent therefore has to win, and win clearly; scoring 10 points in a lost game does not count.
 - Do not stop before this is reached. If an approach falls short, document the result in its experiment Markdown file, work out why it failed, and try a new approach in a new experiment file. Do not stop just because one approach failed, or to hand a partial result back.
 - The criterion must be met under all the rules below. In particular, the world model and the actor are trained only on unmodified Pong, and every design decision is based on unmodified Pong (see "Robustness evaluation with `lazy_enemy`"). An actor that reaches the score only because `lazy_enemy` leaked into training, tuning, or model selection does not count.
@@ -62,8 +80,10 @@ Keep this file up to date as runs finish, and commit it together with the code.
 - After a run finishes or an experiment's Markdown changes, rebuild with `CUDA_VISIBLE_DEVICES= uv run dashboard/build_dashboard.py` (CPU only) and commit `dashboard/` with the experiment. If you have the Artifact tool, also republish the hosted copy as described in `dashboard/README.md`.
 - The dashboard only displays `lazy_enemy` results. Do not use it for model selection or tuning.
 
-## Robustness evaluation with `lazy_enemy`
+## Robustness evaluation with held-out mods (`lazy_enemy`, Seaquest `gravity`)
 
 - The JAXAtari **`lazy_enemy`** mod can be used to check whether a learned world model is robust to changed object dynamics (see `project.md`; the goal is an actor reaching a final score (own points minus enemy points) of at least +10 with the mod active).
 - **NEVER train on `lazy_enemy`.** Do not use it for training data, for training the world model or the actor, for tuning hyperparameters, or for model selection. It is for validation only.
 - All training uses the unmodified Pong environment. `lazy_enemy` is only used to evaluate finished models.
+- The same rules hold for Seaquest's `gravity` mod: **never train, tune or select on it**. All
+  Seaquest training uses the base game. `gravity` is only used to evaluate finished agents.

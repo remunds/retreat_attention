@@ -51,6 +51,7 @@ ROOT = os.path.dirname(DASH)
 RUNS = os.path.join(ROOT, "runs")
 MEDIA = os.path.join(DASH, "media")
 TARGET = 10.0  # lazy_enemy criterion: final score (player - enemy) >= +10
+SQ_TARGET = 2.0  # Seaquest gravity criterion: >= 2 successful rescues (6 divers) per game
 RUNNING_WINDOW_S = 15 * 60  # a run whose log changed this recently counts as running
 
 
@@ -114,11 +115,16 @@ def doc_summary(doc):
 
 
 def exp_number(*texts):
+    """Experiment number from 'Experiment 3' (Pong) or 'Experiment S1' (Seaquest; returned as 'S1')."""
     for t in texts:
-        m = re.search(r"Experiment\s+(\d+)", t or "")
+        m = re.search(r"Experiment\s+(S?)(\d+)", t or "")
         if m:
-            return int(m.group(1))
+            return f"S{m.group(2)}" if m.group(1) else int(m.group(2))
     return None
+
+
+def game_of(module, cfg=None):
+    return "seaquest" if "seaquest" in module or (cfg or {}).get("game") == "seaquest" else "pong"
 
 
 def run_names_from_md(text):
@@ -174,13 +180,21 @@ def parse_log(path):
                 info["config"] = ast.literal_eval(line[len("config: "):])
             except (ValueError, SyntaxError):
                 pass
-        m = re.match(r"=== round (\d+) ===", line)
+        m = re.match(r"=== round (\d+) ===$", line.strip())
         if m:
             rnd = dict(round=int(m.group(1)))
             info["rounds"].append(rnd)
         m = re.search(r"wm it\s+\d+ train \S+ val (\S+)", line)
         if m and rnd is not None:
             rnd["val_loss"] = float(m.group(1))
+        m = re.search(r"=== round (\d+) === update (\d+): base-game eval sample rescues (\S+) divers (\S+) score (\S+) \| "
+                      r"greedy rescues (\S+) divers (\S+) score (\S+)", line)
+        if m:  # Seaquest: one line per evaluation round
+            g = m.groups()
+            info["rounds"].append(dict(round=int(g[0]), update=int(g[1]), rescues_sample=float(g[2]),
+                                       divers_sample=float(g[3]), score_sample=float(g[4]), rescues_greedy=float(g[5]),
+                                       divers_greedy=float(g[6]), score_greedy=float(g[7]), done=True))
+            continue
         m = re.search(r"real Pong eval sample: (\S+) : (\S+) \| greedy: (\S+) : (\S+)", line)
         if m and rnd is not None:
             a, b, c, d = map(float, m.groups())
@@ -222,6 +236,28 @@ def lazy_evals():
     return out
 
 
+def gravity_evals():
+    """{run_dir_name: [eval dict]} from every gravity_eval*.json below runs/ (Seaquest)."""
+    out = {}
+    for path in glob.glob(os.path.join(RUNS, "**", "*gravity_eval*.json"), recursive=True):
+        ev = load_json(path)
+        if not ev or "gravity" not in ev:
+            continue
+        parts = os.path.normpath(ev.get("ckpt", "")).split(os.sep)
+        run = parts[1] if len(parts) >= 3 and parts[0] == "runs" else None
+        if run is None:
+            continue
+        b, g = ev.get("base", {}), ev["gravity"]
+        out.setdefault(run, []).append(dict(
+            file=os.path.relpath(path, ROOT), ckpt=ev.get("ckpt"), round=ev.get("round"), greedy=ev.get("greedy"),
+            games=ev.get("games"), seed=ev.get("seed"), game="seaquest",
+            base_rescues=b.get("rescues_mean"), base_score=b.get("score_mean"), base_divers=b.get("divers_mean"),
+            gravity_rescues=g.get("rescues_mean"), gravity_score=g.get("score_mean"), gravity_divers=g.get("divers_mean"),
+            gravity_games_2=g.get("games_with_2_rescues"), gravity_per_game=g.get("rescues_per_game"),
+            base_per_game=b.get("rescues_per_game"), mtime=os.path.getmtime(path)))
+    return out
+
+
 def run_info(name, evals, procs):
     d = os.path.join(RUNS, name)
     files = [os.path.join(d, f) for f in os.listdir(d)]
@@ -231,7 +267,16 @@ def run_info(name, evals, procs):
     cfg = (res or {}).get("config") or (wmo or {}).get("config") or log["config"] or {}
     info = dict(name=name, mtime=mtime, config=cfg, experiment=cfg.get("experiment") or cfg.get("module"))
     rounds = []
-    if res:
+    info["game"] = cfg.get("game", "pong")
+    if res and info["game"] == "seaquest":
+        for r in res.get("rounds", []):
+            bs, bg = r.get("base_sample", {}), r.get("base_greedy", {})
+            rounds.append(dict(round=r["round"], update=r.get("update"), frames=r.get("frames"),
+                               rescues_sample=bs.get("rescues"), rescues_greedy=bg.get("rescues"),
+                               divers_sample=bs.get("divers"), divers_greedy=bg.get("divers"),
+                               score_sample=bs.get("score"), score_greedy=bg.get("score")))
+        info["selected"] = res.get("selected")
+    elif res:
         for r in res.get("rounds", []):
             ps, pg = r.get("pong_sample", {}), r.get("pong_greedy", {})
             rounds.append(dict(round=r["round"], val_loss=r.get("wm", {}).get("val_loss"),
@@ -255,6 +300,7 @@ def run_info(name, evals, procs):
     else:
         info["kind"] = "started"
     info["evals"] = sorted(evals.get(name, []), key=lambda e: e["mtime"])
+    info["gevals"] = sorted(GRAVITY_EVALS.get(name, []), key=lambda e: e["mtime"])
     pat = re.compile(rf"--name[ =]{re.escape(name)}(\s|$)|runs/{re.escape(name)}/")
     live = [(el, a) for el, a in procs if pat.search(a)]
     info["process"] = [dict(elapsed_s=el, cmd=a[re.search(r"[\w/]+\.py", a).start():]) for el, a in live]
@@ -262,13 +308,17 @@ def run_info(name, evals, procs):
     done_rounds = len(rounds)
     if info["running"] and any(re.match(r"(evaluate|select)_", p["cmd"]) for p in info["process"]):
         info["activity"] = "held-out evaluation" if any(p["cmd"].startswith("evaluate_") for p in info["process"]) \
-            else "checkpoint selection (unmodified Pong)"
+            else "checkpoint selection (training game)"
     elif info["running"] and info["kind"] != "wm_only":
         cur = log["last_line"]
         m = re.search(r"ppo\s+(\d+)", cur)
-        stage = f"PPO update {m.group(1)}/{cfg.get('ppo_updates', '?')}" if m else (
-            "world model" if "wm it" in cur else "collecting / evaluating")
-        info["activity"] = f"round {min(done_rounds, (info['rounds_total'] or 99) - 1)}: {stage}"
+        mu = re.search(r"upd\s+(\d+) frames\s+(\S+)M", cur)
+        if mu:  # Seaquest PPO on the real base game
+            info["activity"] = f"PPO update {mu.group(1)}/{cfg.get('updates', '?')} · {mu.group(2)}M frames"
+        else:
+            stage = f"PPO update {m.group(1)}/{cfg.get('ppo_updates', '?')}" if m else (
+                "world model" if "wm it" in cur else "collecting / evaluating")
+            info["activity"] = f"round {min(done_rounds, (info['rounds_total'] or 99) - 1)}: {stage}"
     info["checkpoint"] = latest_checkpoint(d)
     return info
 
@@ -287,9 +337,14 @@ def latest_checkpoint(d):
 # ----------------------------------------------------------------------------- experiments
 
 
+GRAVITY_EVALS = {}
+
+
 def collect():
     procs = processes()
     evals = lazy_evals()
+    GRAVITY_EVALS.clear()
+    GRAVITY_EVALS.update(gravity_evals())
     run_names = sorted(n for n in os.listdir(RUNS) if os.path.isdir(os.path.join(RUNS, n))) if os.path.isdir(RUNS) else []
     runs = {n: run_info(n, evals, procs) for n in run_names}
 
@@ -302,6 +357,7 @@ def collect():
         doc = docstring(py)
         experiments[module] = dict(
             module=module, py=os.path.basename(py), md=os.path.basename(md_path) if md else None,
+            game=game_of(module),
             title=sec.get("_title") or (doc.splitlines()[0] if doc else module),
             number=exp_number(sec.get("_title"), doc),
             summary=find_section(sec, "summary") or doc_summary(doc),
@@ -343,12 +399,22 @@ def collect():
         e["updated"] = max([r["mtime"] for r in e["runs"]] + [e["mtime"]])
         del e["md_runs"], e["flags"]
         out.append(e)
-    out.sort(key=lambda e: (e["number"] is None, e["number"] or 0, e["mtime"]))
+    out.sort(key=lambda e: (e["game"] != "seaquest", e["number"] is None,
+                            int(str(e["number"]).lstrip("S")) if e["number"] is not None else 0, e["mtime"]))
     return out, unassigned
 
 
 def status(e):
     runs = e["runs"]
+    if e.get("game") == "seaquest":
+        gev = [ev for r in runs for ev in r["gevals"]]
+        if any((ev["gravity_rescues"] or 0) >= SQ_TARGET and (ev["games"] or 0) >= 10 for ev in gev):
+            return "goal_met"
+        if any(r["running"] for r in runs):
+            return "running"
+        if gev:
+            return "evaluated"
+        return "trained" if any(r["rounds"] for r in runs) else "no_runs"
     evals = [ev for r in runs for ev in r["evals"]]
     if any(ev["lazy_final"] is not None and ev["lazy_final"] >= TARGET and (ev["games"] or 0) >= 10 for ev in evals):
         return "goal_met"
@@ -368,11 +434,13 @@ def status(e):
 
 def video_entry(module, m):
     return dict(run=m["run"], label=m["label"], ckpt=m["ckpt"], greedy=m.get("greedy"), has_actor=m.get("has_actor"),
+                game=m.get("game", "pong"), steps=m.get("steps"),
                 views={v: dict(src=f"media/{d['file']}", **d) for v, d in m.get("views", {}).items()})
 
 
 def update_videos(experiments, force=False):
     import render_rollout
+    import render_seaquest
 
     os.makedirs(MEDIA, exist_ok=True)
     man_path = os.path.join(MEDIA, "manifest.json")
@@ -388,7 +456,8 @@ def update_videos(experiments, force=False):
         ck_mtime = os.path.getmtime(ck_path)
         prefix = os.path.join(MEDIA, e["module"])
         prev = manifest.get(e["module"])
-        have = prev is not None and set(prev.get("views", {})) == set(render_rollout.VIEWS) and all(
+        renderer = render_seaquest if e.get("game") == "seaquest" else render_rollout
+        have = prev is not None and set(prev.get("views", {})) == set(renderer.VIEWS) and all(
             os.path.exists(os.path.join(MEDIA, d["file"])) for d in prev["views"].values())
         fresh = have and prev["ckpt"] == ck["path"] and abs(prev["ckpt_mtime"] - ck_mtime) < 1
         if time.time() - ck_mtime < 30:  # checkpoint still being written: keep the old videos for now
@@ -396,7 +465,7 @@ def update_videos(experiments, force=False):
         if force or not fresh:
             print(f"rendering {e['module']} <- {ck['path']}", flush=True)
             try:
-                meta = render_rollout.render(e["module"], ck_path, prefix, label=f"{run['name']} · {ck['label']}")
+                meta = renderer.render(e["module"], ck_path, prefix, label=f"{run['name']} · {ck['label']}")
             except Exception as exc:  # a broken checkpoint must not break the dashboard
                 print(f"  video failed: {exc!r}", flush=True)
                 e["video"] = dict(error=repr(exc), run=run["name"], ckpt=ck["path"])
@@ -421,7 +490,7 @@ def git_head():
 
 def write_outputs(experiments, unassigned, fragment_path=None):
     data = dict(generated=time.time(), generated_iso=dt.datetime.now().isoformat(timespec="seconds"),
-                git=git_head(), target=TARGET, experiments=experiments, unassigned=unassigned)
+                git=git_head(), target=TARGET, sq_target=SQ_TARGET, experiments=experiments, unassigned=unassigned)
     with open(os.path.join(DASH, "data.json"), "w") as f:
         json.dump(data, f, indent=1)
     template = read(os.path.join(DASH, "template.html"))
