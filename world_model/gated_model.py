@@ -25,6 +25,24 @@ negative (softplus(-4) ~= 0.018) so it starts almost inert and only grows if
 training actually rewards it: distance may matter a lot for Pong's ball, and
 much less (or not at all) for other objects or other games, so nothing here
 should force it to matter everywhere.
+
+Every soft-attention fix tried (temperature annealing, the distance bias, an
+L1 null-prior) converged on the same conclusion (see solutions.md): the
+ball<->paddle "dependency" the gate kept finding was a global proxy
+correlation with no bounce-localized structure at all, checked directly
+against real bounce timesteps. That's evidence the *soft* mechanism itself
+- continuous optimization gradually discovering a conditional rule - may not
+be finding one because there's little gradient pressure toward genuinely
+switching per-example, as opposed to blending a constant mixture. `hard` /
+`key` below add **approach A**: Gumbel-Softmax with a straight-through
+estimator, which forces an actual discrete commitment to one candidate (or
+null) on every forward pass instead of a continuous blend, while keeping a
+soft gradient for training. `key=None` gives a deterministic hard argmax
+(no stochasticity) - the mode to use for inspection, since the output is an
+unambiguous discrete pick. `key=<a PRNGKey>` adds Gumbel noise before that
+argmax - the mode to use during training, since it gives the discrete choice
+a chance to explore rather than getting stuck wherever the (possibly still
+partly-arbitrary) initial scores happen to rank candidates.
 """
 
 import jax
@@ -33,6 +51,12 @@ import jax.numpy as jnp
 ATTN_DIM = 16
 VALUE_DIM = 16
 DIST_BIAS_INIT = -4.0
+GUMBEL_EPS = 1e-20
+
+
+def _sample_gumbel(key, shape):
+    u = jax.random.uniform(key, shape, minval=GUMBEL_EPS, maxval=1.0 - GUMBEL_EPS)
+    return -jnp.log(-jnp.log(u))
 
 
 def init_gate_params(key, dim_target: int, candidate_dims: dict, distance_candidates=()):
@@ -57,7 +81,16 @@ def init_gate_params(key, dim_target: int, candidate_dims: dict, distance_candid
     return params
 
 
-def gate_forward(params, own_current, candidates: dict, candidate_names, temperature: float = 1.0, distances=None):
+def gate_forward(
+    params,
+    own_current,
+    candidates: dict,
+    candidate_names,
+    temperature: float = 1.0,
+    distances=None,
+    hard: bool = False,
+    key=None,
+):
     """own_current: (B, dim_target). candidates[name]: (B, dim_name). All normalized
     (the "action" candidate is one-hot, which needs no separate normalization).
 
@@ -71,9 +104,17 @@ def gate_forward(params, own_current, candidates: dict, candidate_names, tempera
     what the query/key parameters have learned, which is what lets us anneal
     toward hard selection instead of relying purely on the entropy penalty.
 
+    `hard`: use a straight-through estimator - the returned weights are an
+    exact one-hot (forward value), with the ordinary softmax's gradient
+    (backward value), instead of a continuous blend. `key`: a PRNGKey to add
+    Gumbel noise before the (still-deterministic) argmax that picks the
+    one-hot - use during training for exploration; omit (None) for a
+    deterministic hard pick, e.g. when inspecting what the gate committed to.
+    `key` is ignored when `hard=False`.
+
     Returns context (B, VALUE_DIM), weights (B, len(candidate_names) + 1) — the
     last column being the learned "null"/no-dependency option — and the raw
-    (pre-softmax, pre-temperature) scores for diagnostics.
+    (pre-softmax, pre-temperature, pre-Gumbel-noise) scores for diagnostics.
     """
     batch = own_current.shape[0]
     query = own_current @ params["query_w"]  # (B, ATTN_DIM)
@@ -99,7 +140,20 @@ def gate_forward(params, own_current, candidates: dict, candidate_names, tempera
         dist_bias_cols.append(jnp.zeros(batch))  # null candidate: no distance to bias by
         scores = scores - jnp.stack(dist_bias_cols, axis=1)
 
-    weights = jax.nn.softmax(scores / temperature, axis=-1)  # (B, K)
+    logits = scores / temperature
+    if hard and key is not None:
+        logits = logits + _sample_gumbel(key, logits.shape)
+
+    soft_weights = jax.nn.softmax(logits, axis=-1)
+    if hard:
+        onehot = jax.nn.one_hot(jnp.argmax(logits, axis=-1), logits.shape[-1])
+        # Straight-through: forward value must be exactly `onehot` (stop_gradient
+        # doesn't change a value, only its gradient - putting it on the wrong
+        # term here silently reduces the forward value back to `soft_weights`).
+        weights = jax.lax.stop_gradient(onehot - soft_weights) + soft_weights
+    else:
+        weights = soft_weights
+
     context = jnp.einsum("bk,bkd->bd", weights, values)  # (B, VALUE_DIM)
     return context, weights, scores
 

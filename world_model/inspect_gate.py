@@ -42,7 +42,13 @@ def recompute_weights(entry, dataset):
         candidates_norm["action"] = jax.nn.one_hot(dataset["action"], entry["num_actions"])
 
     _, weights, _ = gate_forward(
-        entry["gate_params"], own_current_norm, candidates_norm, candidate_names, entry["temperature"], distances
+        entry["gate_params"],
+        own_current_norm,
+        candidates_norm,
+        candidate_names,
+        entry["temperature"],
+        distances,
+        hard=entry.get("hard", False),
     )
     return np.array(weights)
 

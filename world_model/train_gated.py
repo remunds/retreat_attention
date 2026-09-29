@@ -59,6 +59,15 @@ unless a real MSE improvement is worth paying the L1 cost for. Unlike the
 distance bias, this is deliberately *not* candidate-specific: it doesn't
 presume which object should get suppressed, only that *something* other than
 null needs to earn its keep.
+
+Checked directly against real bounce timesteps (`inspect_bounce_attention.py`):
+none of the above ever found bounce-localized structure, at any strength —
+just a global proxy correlation, full stop (see solutions.md). `--gate-mode
+hard` is **approach A**: Gumbel-Softmax with a straight-through estimator
+(`gated_model.gate_forward`'s `hard`/`key` arguments) forces an actual
+discrete commitment to one candidate (or null) on every forward pass, with
+Gumbel noise for exploration during training, instead of hoping continuous
+optimization gradually discovers a conditional switching rule on its own.
 """
 
 import argparse
@@ -117,6 +126,7 @@ def train_object(
     temperature_end: float,
     head: str = "mlp",
     null_prior_weight: float = 0.0,
+    hard: bool = False,
 ):
     other_names = [name for name in OBJECT_DIMS if name != target_name]
     dim_t = OBJECT_DIMS[target_name]
@@ -176,21 +186,28 @@ def train_object(
     opt = make_gate_optimizer(lr, gate_lr)
     opt_state = opt.init(params)
 
-    def forward_pass(params, own_batch, candidates_batch, distances_batch, temperature):
+    def forward_pass(params, own_batch, candidates_batch, distances_batch, temperature, gumbel_key=None):
         own_norm = (own_batch - own_mean) / own_std
         own_current_norm = own_norm[:, -dim_t:]
         candidates_norm = prepare_candidates(candidates_batch)
         distances_norm = prepare_distances(distances_batch)
         context, weights, scores = gate_forward(
-            params["gate"], own_current_norm, candidates_norm, candidate_names, temperature, distances_norm
+            params["gate"],
+            own_current_norm,
+            candidates_norm,
+            candidate_names,
+            temperature,
+            distances_norm,
+            hard=hard,
+            key=gumbel_key,
         )
         pred_input = jnp.concatenate([own_norm, context], axis=-1)
         pred_norm = pred_forward(params["pred"], pred_input)
         pred = pred_norm * y_std + y_mean
         return pred, weights, scores
 
-    def loss_fn(params, own_batch, candidates_batch, distances_batch, y_batch, temperature):
-        pred, weights, _ = forward_pass(params, own_batch, candidates_batch, distances_batch, temperature)
+    def loss_fn(params, own_batch, candidates_batch, distances_batch, y_batch, temperature, gumbel_key):
+        pred, weights, _ = forward_pass(params, own_batch, candidates_batch, distances_batch, temperature, gumbel_key)
         mse = jnp.mean((pred - y_batch) ** 2)
         entropy = jnp.mean(attention_entropy(weights))
         non_null_mass = jnp.mean(jnp.sum(weights[:, :-1], axis=-1))  # L1 on non-null weights == 1 - mean null weight
@@ -198,9 +215,9 @@ def train_object(
         return loss, (mse, entropy, non_null_mass)
 
     @jax.jit
-    def step(params, opt_state, own_batch, candidates_batch, distances_batch, y_batch, temperature):
+    def step(params, opt_state, own_batch, candidates_batch, distances_batch, y_batch, temperature, gumbel_key):
         (loss, (mse, entropy, non_null_mass)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params, own_batch, candidates_batch, distances_batch, y_batch, temperature
+            params, own_batch, candidates_batch, distances_batch, y_batch, temperature, gumbel_key
         )
         updates, opt_state = opt.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
@@ -215,11 +232,22 @@ def train_object(
             idx = perm[i : i + batch_size]
             candidates_batch = {n: v[idx] for n, v in candidates_train.items()}
             distances_batch = {n: v[idx] for n, v in distances_train.items()}
+            key, gumbel_key = jax.random.split(key)
             params, opt_state, _, _, _ = step(
-                params, opt_state, own_train[idx], candidates_batch, distances_batch, y_train[idx], temperature
+                params,
+                opt_state,
+                own_train[idx],
+                candidates_batch,
+                distances_batch,
+                y_train[idx],
+                temperature,
+                gumbel_key,
             )
 
         if (epoch + 1) % max(1, epochs // 5) == 0 or epoch == epochs - 1:
+            # key=None here -> a deterministic hard pick when hard=True, so the
+            # printed weights show an unambiguous discrete commitment rather
+            # than one particular noisy sample.
             val_pred, val_weights, val_scores = forward_pass(params, own_val, candidates_val, distances_val, temperature)
             val_mse = float(jnp.mean((val_pred - y_val) ** 2))
             val_entropy = float(jnp.mean(attention_entropy(val_weights)))
@@ -250,6 +278,7 @@ def train_object(
         "num_actions": num_actions,
         "temperature": temperature_end,
         "head": head,
+        "hard": hard,
     }
 
 
@@ -266,6 +295,7 @@ def main():
     parser.add_argument("--temperature-end", type=float, default=0.1)
     parser.add_argument("--head", choices=["mlp", "linear"], default="mlp")
     parser.add_argument("--null-prior-weight", type=float, default=0.0)
+    parser.add_argument("--gate-mode", choices=["soft", "hard"], default="soft")
     args = parser.parse_args()
 
     raw = np.load(args.data)
@@ -289,6 +319,7 @@ def main():
             args.temperature_end,
             args.head,
             args.null_prior_weight,
+            args.gate_mode == "hard",
         )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -33,7 +33,13 @@ def _mean_null_weight(result, data, target_name):
     if include_action:
         candidates_norm["action"] = jax.nn.one_hot(dataset["action"], result["num_actions"])
     _, weights, _ = gate_forward(
-        result["gate_params"], own_current_norm, candidates_norm, result["candidate_names"], 1.0, distances_norm
+        result["gate_params"],
+        own_current_norm,
+        candidates_norm,
+        result["candidate_names"],
+        1.0,
+        distances_norm,
+        hard=result.get("hard", False),
     )
     return float(np.mean(np.array(weights)[:, -1]))
 
@@ -109,6 +115,59 @@ def test_train_gated_object_smoke(data, head):
         assert "gate_params" in result
         assert "pred_params" in result
         assert result["head"] == head
+
+
+def test_train_gated_object_smoke_hard_mode(data):
+    key = jax.random.PRNGKey(0)
+    for name in OBJECT_DIMS:
+        key, subkey = jax.random.split(key)
+        result = train_object(
+            name,
+            data,
+            subkey,
+            epochs=1,
+            batch_size=32,
+            lr=1e-3,
+            gate_lr=5e-3,
+            sparsity_weight=0.01,
+            temperature_start=1.0,
+            temperature_end=1.0,
+            hard=True,
+        )
+        assert result["hard"] is True
+        null_mass = _mean_null_weight(result, data, name)
+        assert 0.0 <= null_mass <= 1.0
+
+
+def test_hard_gating_is_exactly_one_hot_and_key_adds_exploration():
+    key = jax.random.PRNGKey(0)
+    candidate_names = ["enemy", "ball"]
+    candidate_dims = {"enemy": OBJECT_DIMS["enemy"], "ball": OBJECT_DIMS["ball"]}
+    params = init_gate_params(key, OBJECT_DIMS["player"], candidate_dims)
+
+    n = 20
+    own_current = jax.random.normal(jax.random.PRNGKey(1), (n, OBJECT_DIMS["player"]))
+    candidates = {
+        "enemy": jax.random.normal(jax.random.PRNGKey(2), (n, OBJECT_DIMS["enemy"])),
+        "ball": jax.random.normal(jax.random.PRNGKey(3), (n, OBJECT_DIMS["ball"])),
+    }
+
+    # Deterministic (key=None): forward value is an exact one-hot every time, same result on repeat.
+    _, weights_det, _ = gate_forward(params, own_current, candidates, candidate_names, 1.0, hard=True)
+    assert jax.numpy.allclose(weights_det.sum(axis=-1), 1.0, atol=1e-6)
+    assert jax.numpy.all((weights_det == 0) | (weights_det == 1))
+    _, weights_det2, _ = gate_forward(params, own_current, candidates, candidate_names, 1.0, hard=True)
+    assert jax.numpy.array_equal(weights_det, weights_det2)
+
+    # Stochastic (a key given): still exactly one-hot, but different keys can pick differently.
+    _, weights_a, _ = gate_forward(
+        params, own_current, candidates, candidate_names, 1.0, hard=True, key=jax.random.PRNGKey(10)
+    )
+    _, weights_b, _ = gate_forward(
+        params, own_current, candidates, candidate_names, 1.0, hard=True, key=jax.random.PRNGKey(11)
+    )
+    assert jax.numpy.all((weights_a == 0) | (weights_a == 1))
+    assert not jax.numpy.array_equal(weights_a, weights_b)
 
 
 def test_null_prior_weight_pushes_attention_toward_null(data):
