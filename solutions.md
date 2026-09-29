@@ -335,10 +335,35 @@ More training didn't refine ball's court-position variation toward the correct l
 
 **Net read**: hard gating looks genuinely promising for player and enemy (both objects with a single, clean, deterministic true dependency), but not yet for ball, whose real dependency is switching between two candidates conditionally rather than settling on one fixed winner — exactly the harder case the whole "per-timestep dependency" idea was designed for, and exactly where it's still failing.
 
+## Checking player's and enemy's hard-gated dependencies under the same scrutiny that caught ball
+
+Ran the same diagnostics (`inspect_gate.py`, `inspect_bounce_attention.py`) against player's and enemy's own 150-epoch results, not just ball's — the same rigor that caught ball's problem, applied evenly. One interpretive wrinkle first: player's true dynamics (`_player_step`) never reference the ball at all, and enemy's rule (`direction = sign(ball_y - enemy_y)`) applies at *every* non-skipped step, not just near contact — so for these two, a *flat* dependency across bounce-timing isn't suspicious the way it was for ball; it's what correct behavior should look like. The interesting question is whether it's flat *and correct*, or flat *and wrong*.
+
+**Enemy passes convincingly — this is the cleanest result in the whole investigation so far:**
+
+```
+enemy's "ball" attention:
+  overall:            0.47
+  at enemy-bounce   :  0.57  (rises - correctly - right at its own contact moments)
+  at player-bounce  :  0.41  (falls, alongside a rise in "null" - correctly stays out of an irrelevant event)
+```
+
+Ball-attention rises specifically at enemy's *own* bounce moments (the physically sensible place for precision to matter most) and falls during player-side events that have nothing to do with enemy's task, with "null" picking up the slack. Combined with the epoch-50→150 shift away from the spurious "player" candidate and toward "ball", this is a real, correctly-localized, causally-plausible dependency by every check applied so far.
+
+**Player mostly passes, with one small residual worth flagging, not fixing yet:**
+
+```
+player's "action" attention:
+  overall:              0.52
+  at player-bounce   :   0.48  (a small, possibly-noise dip, n=87)
+  at enemy-bounce    :   0.53  (matches "elsewhere" almost exactly - correctly indifferent to an irrelevant event)
+```
+
+"Action" (the actual driver of player's own physics) dominates as expected, and is correctly unaffected by enemy-side events. The dip specifically at player's own bounce moments is small and could easily be sampling noise at n=87 — but there's also a steadier ~20% attention on "ball" throughout, which is plausible-but-imperfect: since `epsilon_track_ball`'s policy *generates* the action from `ball_y` vs `player_y`, ball position is a genuine (if redundant, second-order) predictor of player's own upcoming movement — not the same kind of confound as ball's paddle-dependency problem, but not a fully clean result either.
+
 ## Next steps
 - **The player/enemy improvement suggests the mechanism itself works when there's one right answer to converge to; ball's regression suggests it doesn't yet handle "the right answer changes per step."** Worth trying an anneal schedule that doesn't force full commitment by a fixed epoch count — e.g. only sharpen once validation MSE plateaus, rather than on a fixed schedule, so the model has more room to keep exploring before committing early to whichever candidate happened to look best first.
-- Re-run the full diagnostic suite (court-position, bounce-timing, return-rate) on player's and enemy's own final dependencies too, not just their printed mean-attention numbers, to confirm the "moved toward the correct candidate" reading holds up under the same scrutiny that caught ball's problem.
-- **Actually wiring up `lazy_enemy` (or an analogous "lazy player" mod) is now the more informative test than ever, and complements the bounce-timed check rather than repeating it**: bounce-timing tells us whether a dependency is *conditionally localized*; intervention tells us whether it's *causally real* even if localized (enemy's "ball" dependency looks increasingly genuine by every measure so far, worth confirming it survives `lazy_enemy`) — a relocated shortcut should either fail the localization check (as ball's did) or break under intervention even if it passed localization.
+- **Actually wiring up `lazy_enemy` (or an analogous "lazy player" mod) is now the more informative test than ever, and complements the bounce-timed check rather than repeating it**: bounce-timing tells us whether a dependency is *conditionally localized*; intervention tells us whether it's *causally real* even if localized (enemy's "ball" dependency now looks genuine by every measure applied so far — court-position-style shift toward the right candidate over training, and correctly-directed bounce-timing localization — worth confirming it survives `lazy_enemy`) — a relocated shortcut should either fail the localization check (as ball's did) or break under intervention even if it passed localization.
 - Re-run both the `inspect_gate.py` court-position check and `inspect_bounce_attention.py`'s exact-timestep check (plus the return-rate check) on every future variant before trusting any resulting numbers — standing rule, now with three independent confirmations of how necessary it is.
 - Stop annealing temperature once validation MSE stops improving (player's linear-head run got *worse* past its epoch-30 optimum as temperature kept dropping) — an early-stopping or MSE-monitoring criterion on the anneal schedule, rather than a fixed epoch-based one.
 - Average the open-loop rollout evaluation over multiple start points/seeds for both models — the single-window baseline numbers from before are too noisy to trust individually, and the same applies to any future gated-model rollout comparison.
