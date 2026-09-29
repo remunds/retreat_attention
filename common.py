@@ -174,3 +174,35 @@ class ReplayBuffer:
         bad = c[:, hi] - c[:, lo]
         env_idx, t_idx = np.nonzero(bad == 0)
         return env_idx.astype(np.int32), ts[t_idx].astype(np.int32)
+
+
+def leakage(predict_fn, frames_win, actions, key, near_px=40.0):
+    """Counterfactual leakage test on real (unmodified Pong) windows.
+
+    For each object j, its history is replaced by object j's history from a random other sample,
+    and the change of every *other* object's 1-step prediction is measured (RMSE, pixels). The
+    ball's change is reported separately for the ball moving near the enemy paddle (enemy at x=16;
+    `near` = ball x < 16 + near_px), moving far from it, and waiting to be served, since the ball
+    should only need the enemy near a bounce.
+
+    predict_fn(hist (B, K, 3, 2), action (B,)) -> next positions (B, 3, 2).
+    """
+    base = predict_fn(frames_win, actions)
+    perm = jax.random.permutation(key, frames_win.shape[0])
+    ball_x = frames_win[:, -1, 2, 0]
+    near = ball_x < 16.0 + near_px
+    # ball waiting to be served: it did not move during the last two steps
+    moving = jnp.any(frames_win[:, -1, 2] != frames_win[:, -3, 2], axis=-1)
+    far_moving = moving & ~near
+    out = {}
+    for j, nj in enumerate(OBJECT_NAMES):
+        swapped = frames_win.at[:, :, j].set(frames_win[perm][:, :, j])
+        d = jnp.sqrt(jnp.sum((predict_fn(swapped, actions) - base) ** 2, -1))  # (B, 3)
+        for i, ni in enumerate(OBJECT_NAMES):
+            if i == j:
+                continue
+            out[f"{ni}<-{nj}"] = float(jnp.sqrt(jnp.mean(d[:, i] ** 2)))
+            if ni == "ball" and nj == "enemy":
+                for cname, c in (("near", near & moving), ("far", far_moving), ("waiting", ~moving)):
+                    out[f"ball<-enemy_{cname}"] = float(jnp.sqrt(jnp.sum(jnp.where(c, d[:, i] ** 2, 0)) / jnp.maximum(c.sum(), 1)))
+    return out

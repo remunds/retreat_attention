@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .DS_Store
 runs/*/round*.pkl
+runs/*/wm_only.pkl

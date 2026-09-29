@@ -1,0 +1,15 @@
+config: {'name': 'rg_wmonly', 'seed': 0, 'rounds': 5, 'collect_envs': 256, 'collect_steps': 2000, 'collect_eps': 0.1, 'K': 16, 'H': 8, 'd': 128, 'gate_coef': 0.05, 'wm_batch': 512, 'wm_steps': 20000, 'wm_lr': 0.0003, 'wm_only': 1, 'round_int': 1, 'imag_len': 256, 'p_none': 0.25, 'p_freeze': 0.35, 'p_scale': 0.2, 'p_walk': 0.2, 'freeze_switch_p': 0.1, 'num_imag_envs': 2048, 'ppo_T': 128, 'ppo_updates': 400, 'ppo_epochs': 4, 'ppo_minibatches': 8, 'ppo_lr': 0.0003, 'gamma': 0.99, 'lam': 0.95, 'clip': 0.2, 'ent_coef': 0.01, 'vf_coef': 0.5, 'eval_games': 32, 'eval_max_steps': 10000}
+=== round 0 ===
+collected 512000 steps, total 512000; points won 733 lost 10452
+  wm it      0 train 58.8480 val 53.1162 gate_mean=0.4897 mse_ball=24.5849 mse_enemy=9.9386 mse_player=17.3217 mse_step1=8.7015 open_gates=2.4598 reward_ce=1.1480 (26s)
+  wm it   2000 train 2.3826 val 2.5536 gate_mean=0.4448 mse_ball=1.0548 mse_enemy=0.5002 mse_player=0.9088 mse_step1=1.3294 open_gates=1.3389 reward_ce=0.0229 (79s)
+  wm it   4000 train 1.4657 val 1.9909 gate_mean=0.4445 mse_ball=0.6729 mse_enemy=0.3514 mse_player=0.8887 mse_step1=0.6512 open_gates=1.3340 reward_ce=0.0111 (132s)
+  wm it   6000 train 1.7635 val 2.2023 gate_mean=0.4445 mse_ball=0.7967 mse_enemy=0.4189 mse_player=0.9096 mse_step1=0.4831 open_gates=1.3335 reward_ce=0.0104 (176s)
+  wm it   8000 train 1.9155 val 1.8517 gate_mean=0.4444 mse_ball=0.6110 mse_enemy=0.3134 mse_player=0.8505 mse_step1=0.3661 open_gates=1.3334 reward_ce=0.0101 (229s)
+  wm it  10000 train 1.5504 val 2.1307 gate_mean=0.4444 mse_ball=0.6751 mse_enemy=0.3794 mse_player=0.9993 mse_step1=0.4337 open_gates=1.3334 reward_ce=0.0103 (270s)
+  wm it  12000 train 1.8250 val 1.9722 gate_mean=0.4444 mse_ball=0.6037 mse_enemy=0.3349 mse_player=0.9573 mse_step1=0.5559 open_gates=1.3333 reward_ce=0.0096 (298s)
+  wm it  14000 train 1.3741 val 1.9654 gate_mean=0.4444 mse_ball=0.6081 mse_enemy=0.3431 mse_player=0.9370 mse_step1=0.3901 open_gates=1.3333 reward_ce=0.0105 (326s)
+  wm it  16000 train 1.2521 val 1.9878 gate_mean=0.4444 mse_ball=0.6022 mse_enemy=0.3220 mse_player=0.9861 mse_step1=0.2330 open_gates=1.3333 reward_ce=0.0108 (354s)
+  wm it  18000 train 1.7946 val 2.1068 gate_mean=0.4444 mse_ball=0.6547 mse_enemy=0.3635 mse_player=1.0118 mse_step1=0.3207 open_gates=1.3333 reward_ce=0.0101 (382s)
+  wm it  19999 train 1.3986 val 2.1070 gate_mean=0.4444 mse_ball=0.6082 mse_enemy=0.3334 mse_player=1.0894 mse_step1=0.3398 open_gates=1.3333 reward_ce=0.0093 (410s)
+  leakage (px): enemy<-player=0.00 ball<-player=0.00 player<-enemy=0.00 ball<-enemy=9.13 ball<-enemy_near=6.06 ball<-enemy_far=11.29 ball<-enemy_waiting=1.88 player<-ball=0.00 enemy<-ball=12.69
