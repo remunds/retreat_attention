@@ -93,6 +93,24 @@ def collect(env, act_fn, num_steps, act_params, keys):
     return jax.vmap(run_one)(keys)
 
 
+def _run_until_over(body, init, step_keys):
+    """Apply `body(carry, step_keys[t])` for t = 0, 1, ... until the game is over (carry[-1]) or
+    the keys run out. Identical results to scanning over all keys (steps after the game is over do
+    not change the counted points), but stops early."""
+
+    def cond(c):
+        t, carry = c
+        return jnp.logical_and(t < step_keys.shape[0], jnp.logical_not(carry[-1]))
+
+    def step(c):
+        t, carry = c
+        carry, _ = body(carry, step_keys[t])
+        return t + 1, carry
+
+    _, carry = jax.lax.while_loop(cond, step, (jnp.array(0), init))
+    return carry
+
+
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def evaluate(env, act_fn, max_steps, act_params, keys):
     """Play full games (until one side reaches 21 or `max_steps` agent steps).
@@ -117,7 +135,7 @@ def evaluate(env, act_fn, max_steps, act_params, keys):
             return (obs2, state2, ps, es, over), None
 
         init = (obs, state, jnp.array(0.0), jnp.array(0.0), jnp.array(False))
-        (_, _, ps, es, over), _ = jax.lax.scan(body, init, jax.random.split(k_run, max_steps))
+        (_, _, ps, es, over) = _run_until_over(body, init, jax.random.split(k_run, max_steps))
         return ps, es, over
 
     return jax.vmap(run_one)(keys)
@@ -237,7 +255,7 @@ def evaluate_frozen_enemy_view(env, act_fn, max_steps, act_params, keys):
             return (obs2, state2, ps, es, over), None
 
         init = (obs, state, jnp.array(0.0), jnp.array(0.0), jnp.array(False))
-        (_, _, ps, es, over), _ = jax.lax.scan(body, init, jax.random.split(k_run, max_steps))
+        (_, _, ps, es, over) = _run_until_over(body, init, jax.random.split(k_run, max_steps))
         return ps, es, over
 
     return jax.vmap(run_one)(keys)

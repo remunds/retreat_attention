@@ -100,6 +100,25 @@ Average gates (how much object *row* uses token *column*), on Pong:
 
 Plots: `runs/sow_v1/gates_pong.png`, `runs/sow_v1/gates_lazy_enemy.png`.
 
+### Additional seeds (added for the paper)
+
+Seeds 1 and 2 with the same configuration, selected with `select_robust_checkpoint.py` (unmodified
+Pong: normal play + frozen enemy view; for seed 0 this picks the same checkpoint as above):
+
+```
+CUDA_VISIBLE_DEVICES=5 uv run experiment_sparse_object_wm.py --name sow_s1 --seed 1 --wm_steps 20000 --ppo_updates 400   # likewise sow_s2
+CUDA_VISIBLE_DEVICES=5 uv run select_robust_checkpoint.py --module experiment_sparse_object_wm --runs runs/sow_s1 --out runs/sow_s1/robust/best.pkl
+CUDA_VISIBLE_DEVICES=5 uv run evaluate_lazy_enemy.py --module experiment_sparse_object_wm --ckpt runs/sow_s1/robust/best.pkl
+```
+
+| seed | Pong final score | Pong, frozen enemy view | `lazy_enemy` player : enemy | `lazy_enemy` final score |
+|---|---|---|---|---|
+| 0 | +18.97 | -10.62 | 12.62 : 21.00 | -8.38 |
+| 1 | +17.19 | -14.56 | 10.47 : 21.00 | -10.53 |
+| 2 | +15.06 | -14.97 | 9.72 : 21.00 | -11.28 |
+
+All three seeds lose every `lazy_enemy` game, and all collapse when their view of the enemy is frozen.
+
 ### Interpretation
 
 - Pure imagination training works well: already after round 0 (world model fitted to random-play

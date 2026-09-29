@@ -9,8 +9,9 @@ Code: `experiment_observation_interventions.py` (world model, data collection, P
 Experiment 1's world model is kept unchanged. The actor is trained only in imagination, but in a
 random subset of imagined rallies it sees an intervened enemy (frozen, scaled motion, or a random
 walk), while the imagined game itself is unchanged. With interventions in 90 % of the rallies
-(`--p_none 0.1`), **both seeds meet the goal: final score +17.22 and +16.84 with `lazy_enemy`**
-(32 / 32 games won each), and +19.50 / +17.03 on unmodified Pong. With interventions in 60 % of the
+(`--p_none 0.1`), **all five seeds meet the goal: final score +15.3 ± 2.1 with `lazy_enemy`**
+(+17.22, +16.84, +13.50, +12.06, +17.09; every one of the 160 games won), and +17.6 on unmodified
+Pong. With interventions in 60 % of the
 rallies, only one of two seeds did (+15.62 and +3.09).
 
 ## Goal
@@ -48,6 +49,19 @@ enemy's position.
   `PRNGKey(12345)`, the same seeds for Pong and `lazy_enemy`.
 
 ## Experiments
+
+Additional seeds 2–4 for `p_none 0.1` (added for the paper in `paper/`), selected and evaluated the
+same way:
+
+```
+CUDA_VISIBLE_DEVICES=4 uv run experiment_observation_interventions.py --name oi_p01_s2 --seed 2 --p_none 0.1   # likewise s3, s4
+CUDA_VISIBLE_DEVICES=4 uv run select_robust_checkpoint.py --module experiment_observation_interventions --runs runs/oi_p01_s2 --out runs/oi_p01_s2/robust/best.pkl
+CUDA_VISIBLE_DEVICES=4 uv run evaluate_lazy_enemy.py --module experiment_observation_interventions --ckpt runs/oi_p01_s2/robust/best.pkl
+```
+
+For the paper, the same selection rule was also applied to `oi_s0` and `oi_s1` (and to the runs of
+experiments 1–3). In every run it picked the same checkpoint as the plain Pong score, so all numbers
+below are unchanged.
 
 ```
 # p_none 0.4 (default), two seeds
@@ -94,6 +108,9 @@ Held-out evaluation (32 games each):
 | `oi_s1` | 0.4 | +17.84 | 20.38 : 17.28 | **+3.09** | 25 / 32 | -8 |
 | `oi_p01_s0` | 0.1 | +19.50 | 21.00 : 3.78 | **+17.22** | 32 / 32 | +15 |
 | `oi_p01_s1` | 0.1 | +17.03 | 21.00 : 4.16 | **+16.84** | 32 / 32 | +10 |
+| `oi_p01_s2` | 0.1 | +14.66 | 21.00 : 7.50 | **+13.50** | 32 / 32 | +9 |
+| `oi_p01_s3` | 0.1 | +16.94 | 21.00 : 8.94 | **+12.06** | 32 / 32 | +6 |
+| `oi_p01_s4` | 0.1 | +19.81 | 21.00 : 3.91 | **+17.09** | 32 / 32 | +14 |
 
 (One of `oi_p01_s1`'s 32 unmodified-Pong games hit the 10,000-step cap at 0 : 0, which lowers its
 Pong mean; all its `lazy_enemy` games finished.)
