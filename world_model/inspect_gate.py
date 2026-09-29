@@ -33,14 +33,16 @@ def recompute_weights(entry, dataset):
     own_current_norm = own_norm[:, -dim_t:]
 
     candidates_norm = {}
+    distances = {}
     for name in other_names:
         mean, std = entry["other_stats"][name]
         candidates_norm[name] = (dataset[name] - mean) / std
+        distances[name] = dataset[f"{name}_distance"] / entry["dist_scale"][name]
     if include_action:
         candidates_norm["action"] = jax.nn.one_hot(dataset["action"], entry["num_actions"])
 
     _, weights, _ = gate_forward(
-        entry["gate_params"], own_current_norm, candidates_norm, candidate_names, entry["temperature"]
+        entry["gate_params"], own_current_norm, candidates_norm, candidate_names, entry["temperature"], distances
     )
     return np.array(weights)
 
@@ -82,6 +84,9 @@ def main():
     else:
         buckets = [("all", np.ones(len(weights), dtype=bool))]
 
+    dist_w = {n: float(jax.nn.softplus(entry["gate_params"]["dist_bias_raw"][n])) for n in entry["other_names"]}
+    dist_w_str = ", ".join(f"{n}={w:.3f}" for n, w in dist_w.items())
+    print(f"Learned distance-bias weights: {dist_w_str}")
     print(f"Attention breakdown for '{args.target}' (n={len(weights)} examples):")
     for label, mask in buckets:
         if mask.sum() == 0:

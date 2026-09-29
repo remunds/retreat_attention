@@ -47,18 +47,21 @@ def build_joint_dataset(
     decide per-example how much the target should depend on each of them.
 
     If `distance_fn` is given (signature `(target_name, target_row, other_name,
-    other_row) -> float`), each other-object's row gets an extra trailing
-    column: the current distance between it and the target. This hands the
-    gate a direct proximity signal instead of making it reconstruct "am I
-    near this?" from raw, possibly differently-scaled positions on its own —
-    see solutions.md, this is what the ball->enemy confound diagnostic showed
-    was missing.
+    other_row) -> float`), each other-object also gets a `"<name>_distance"`
+    entry: its current distance to the target. This is kept as its own array
+    rather than appended into the candidate's feature vector — appending it as
+    an opaque extra input feature (an earlier version of this) let a
+    confounded gate exploit distance as "yet another correlated number"
+    instead of learning to attend less at long range, so it made things worse
+    (see solutions.md). Kept separate, it can only be used as a structural,
+    monotonic bias (see `gated_model.gate_forward`'s `distances` argument).
 
     Returns a dict: "own" (own flattened window, no action mixed in), "y"
-    (target), one entry per other-object name (its current-step state [+
-    distance]), and, if `include_action`, an "action" entry (raw action id,
-    one per example) — kept separate from "own" so it can be exposed as its
-    own attention token rather than baked into the predictor's input.
+    (target), one entry per other-object name (its current-step state) [+
+    "<name>_distance" if `distance_fn` given], and, if `include_action`, an
+    "action" entry (raw action id, one per example) — kept separate from
+    "own" so it can be exposed as its own attention token rather than baked
+    into the predictor's input.
     """
     episode_ids = data["episode_ids"]
     actions = data.get("actions")
@@ -68,22 +71,24 @@ def build_joint_dataset(
 
     own_xs, ys, acts = [], [], []
     other_xs = {name: [] for name in other_names}
+    other_dists = {name: [] for name in other_names}
     for t in _valid_timesteps(episode_ids, window, num_steps):
         target_row = target_states[t]
         own_xs.append(target_states[t - window + 1 : t + 1].reshape(-1))
         ys.append(target_states[t + 1])
         for name in other_names:
             other_row = data[name][t]
-            if distance_fn is not None:
-                dist = distance_fn(target_name, target_row, name, other_row)
-                other_row = np.concatenate([other_row, [dist]])
             other_xs[name].append(other_row)
+            if distance_fn is not None:
+                other_dists[name].append(distance_fn(target_name, target_row, name, other_row))
         if include_action:
             acts.append(actions[t])
 
     result = {"own": np.stack(own_xs), "y": np.stack(ys)}
     for name in other_names:
         result[name] = np.stack(other_xs[name])
+        if distance_fn is not None:
+            result[f"{name}_distance"] = np.array(other_dists[name], dtype=np.float32)
     if include_action:
         result["action"] = np.array(acts, dtype=np.int32)
     return result

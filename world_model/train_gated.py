@@ -36,11 +36,16 @@ the gate shifting weight toward the actually-useful candidate.
 A follow-up diagnostic (`inspect_gate.py`) then showed the ball predictor's
 sharpest learned dependency (on "enemy") was a spurious shortcut — attention
 stayed high regardless of which side of the court the ball was actually on,
-so the gate wasn't reading proximity at all. Every real-object candidate now
-gets an extra trailing feature via `world_model.objects.distance`: its
-current Euclidean distance to the target. This hands the gate a direct
-proximity signal instead of hoping it reconstructs "am I near this?" from
-raw, differently-scaled positions on its own.
+so the gate wasn't reading proximity at all. Feeding distance in as an extra
+*opaque* input feature (an earlier version of this file) made that shortcut
+worse, not better — the network had no structural reason to treat "far" as
+"attend less". Every real-object candidate now instead gets a **learned,
+per-candidate distance bias** (see `gated_model.gate_forward`'s `distances`
+argument): a scalar that subtracts `softplus(w) * distance` from that
+candidate's score, so distance can only ever suppress attention, never
+inflate it, but starts near-zero so it doesn't presume distance matters
+before training says so — deliberately soft, since Pong is only the first
+environment this is meant to eventually generalize past.
 """
 
 import argparse
@@ -112,16 +117,23 @@ def train_object(
     candidates_raw = {name: dataset[name] for name in other_names}
     if include_action:
         candidates_raw["action"] = dataset["action"]
+    distances_raw = {name: dataset[f"{name}_distance"] for name in other_names}
 
     train_idx, val_idx = split_indices(len(own))
     own_train, own_val = own[train_idx], own[val_idx]
     y_train, y_val = y[train_idx], y[val_idx]
     candidates_train = {n: v[train_idx] for n, v in candidates_raw.items()}
     candidates_val = {n: v[val_idx] for n, v in candidates_raw.items()}
+    distances_train = {n: v[train_idx] for n, v in distances_raw.items()}
+    distances_val = {n: v[val_idx] for n, v in distances_raw.items()}
 
     own_mean, own_std = normalize_stats(own_train)
     y_mean, y_std = normalize_stats(y_train)
     other_stats = {n: normalize_stats(candidates_train[n]) for n in other_names}
+    # Scale (not center - distance is non-negative and 0 should stay "touching")
+    # so the dist-bias weight's near-zero init is meaningful regardless of a
+    # game's raw coordinate units (Pong distances run up to ~200px).
+    dist_scale = {n: float(distances_train[n].std() + 1e-6) for n in other_names}
 
     def prepare_candidates(batch):
         result = {n: (batch[n] - other_stats[n][0]) / other_stats[n][1] for n in other_names}
@@ -129,11 +141,14 @@ def train_object(
             result["action"] = jax.nn.one_hot(batch["action"], num_actions)
         return result
 
+    def prepare_distances(batch):
+        return {n: batch[n] / dist_scale[n] for n in other_names}
+
     key, k_gate, k_pred = jax.random.split(key, 3)
     candidate_dims = {n: dataset[n].shape[1] for n in other_names}
     if include_action:
         candidate_dims["action"] = num_actions
-    gate_params = init_gate_params(k_gate, dim_t, candidate_dims)
+    gate_params = init_gate_params(k_gate, dim_t, candidate_dims, distance_candidates=other_names)
 
     in_dim = own.shape[1] + VALUE_DIM  # own flattened window, plus attention context
     if head == "linear":
@@ -147,28 +162,29 @@ def train_object(
     opt = make_gate_optimizer(lr, gate_lr)
     opt_state = opt.init(params)
 
-    def forward_pass(params, own_batch, candidates_batch, temperature):
+    def forward_pass(params, own_batch, candidates_batch, distances_batch, temperature):
         own_norm = (own_batch - own_mean) / own_std
         own_current_norm = own_norm[:, -dim_t:]
         candidates_norm = prepare_candidates(candidates_batch)
+        distances_norm = prepare_distances(distances_batch)
         context, weights, scores = gate_forward(
-            params["gate"], own_current_norm, candidates_norm, candidate_names, temperature
+            params["gate"], own_current_norm, candidates_norm, candidate_names, temperature, distances_norm
         )
         pred_input = jnp.concatenate([own_norm, context], axis=-1)
         pred_norm = pred_forward(params["pred"], pred_input)
         pred = pred_norm * y_std + y_mean
         return pred, weights, scores
 
-    def loss_fn(params, own_batch, candidates_batch, y_batch, temperature):
-        pred, weights, _ = forward_pass(params, own_batch, candidates_batch, temperature)
+    def loss_fn(params, own_batch, candidates_batch, distances_batch, y_batch, temperature):
+        pred, weights, _ = forward_pass(params, own_batch, candidates_batch, distances_batch, temperature)
         mse = jnp.mean((pred - y_batch) ** 2)
         entropy = jnp.mean(attention_entropy(weights))
         return mse + sparsity_weight * entropy, (mse, entropy)
 
     @jax.jit
-    def step(params, opt_state, own_batch, candidates_batch, y_batch, temperature):
+    def step(params, opt_state, own_batch, candidates_batch, distances_batch, y_batch, temperature):
         (loss, (mse, entropy)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params, own_batch, candidates_batch, y_batch, temperature
+            params, own_batch, candidates_batch, distances_batch, y_batch, temperature
         )
         updates, opt_state = opt.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
@@ -182,18 +198,22 @@ def train_object(
         for i in range(0, num_train, batch_size):
             idx = perm[i : i + batch_size]
             candidates_batch = {n: v[idx] for n, v in candidates_train.items()}
+            distances_batch = {n: v[idx] for n, v in distances_train.items()}
             params, opt_state, _, _ = step(
-                params, opt_state, own_train[idx], candidates_batch, y_train[idx], temperature
+                params, opt_state, own_train[idx], candidates_batch, distances_batch, y_train[idx], temperature
             )
 
         if (epoch + 1) % max(1, epochs // 5) == 0 or epoch == epochs - 1:
-            val_pred, val_weights, val_scores = forward_pass(params, own_val, candidates_val, temperature)
+            val_pred, val_weights, val_scores = forward_pass(params, own_val, candidates_val, distances_val, temperature)
             val_mse = float(jnp.mean((val_pred - y_val) ** 2))
             val_entropy = float(jnp.mean(attention_entropy(val_weights)))
             score_std = float(jnp.mean(jnp.std(val_scores, axis=-1)))
             mean_weights = np.array(jnp.mean(val_weights, axis=0))
             labels = candidate_names + ["null"]
             weight_str = ", ".join(f"{lbl}={w:.2f}" for lbl, w in zip(labels, mean_weights))
+            dist_w = {n: float(jax.nn.softplus(params["gate"]["dist_bias_raw"][n])) for n in other_names}
+            dist_w_str = ", ".join(f"{n}={w:.3f}" for n, w in dist_w.items())
+            print(f"  [{target_name}]   dist-bias weights: {dist_w_str}")
             print(
                 f"  [{target_name}] epoch {epoch + 1:3d}/{epochs} | T={temperature:.3f} | val MSE {val_mse:.4f} "
                 f"| entropy {val_entropy:.3f} | score_std {score_std:.3f} | mean attn: {weight_str}"
@@ -207,6 +227,7 @@ def train_object(
         "y_mean": y_mean,
         "y_std": y_std,
         "other_stats": other_stats,
+        "dist_scale": dist_scale,
         "other_names": other_names,
         "candidate_names": candidate_names,
         "include_action": include_action,

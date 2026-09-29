@@ -35,6 +35,35 @@ def test_gate_forward_weights_sum_to_one():
     assert (attention_entropy(weights) >= 0).all()
 
 
+def test_distance_bias_is_weak_at_init_and_only_suppresses():
+    key = jax.random.PRNGKey(0)
+    candidate_names = ["enemy", "ball"]
+    candidate_dims = {"enemy": OBJECT_DIMS["enemy"], "ball": OBJECT_DIMS["ball"]}
+    params = init_gate_params(key, OBJECT_DIMS["player"], candidate_dims, distance_candidates=candidate_names)
+
+    own_current = jax.numpy.zeros((4, OBJECT_DIMS["player"]))
+    candidates = {
+        "enemy": jax.numpy.zeros((4, OBJECT_DIMS["enemy"])),
+        "ball": jax.numpy.zeros((4, OBJECT_DIMS["ball"])),
+    }
+
+    # Distances are always normalized (roughly unit scale) before reaching the
+    # gate in real training (see train_gated.py's dist_scale) - this is what
+    # makes the near-zero init actually weak, regardless of a game's raw
+    # coordinate units.
+    _, weights_no_dist, scores_no_dist = gate_forward(params, own_current, candidates, candidate_names, 1.0)
+    distances = {"enemy": jax.numpy.array([0.0, 0.5, 1.0, 2.0]), "ball": jax.numpy.zeros(4)}
+    _, weights_dist, scores_dist = gate_forward(params, own_current, candidates, candidate_names, 1.0, distances)
+
+    # At init (dist_bias_raw = -4 -> softplus ~ 0.018) the bias barely moves attention.
+    assert jax.numpy.allclose(weights_no_dist, weights_dist, atol=0.01)
+    # But it strictly decreases the biased candidate's score as distance grows, never increases it.
+    enemy_scores = scores_dist[:, candidate_names.index("enemy")]
+    assert bool((jax.numpy.diff(enemy_scores) < 0).all())
+    ball_scores = scores_dist[:, candidate_names.index("ball")]
+    assert bool(jax.numpy.allclose(ball_scores, scores_no_dist[:, candidate_names.index("ball")]))
+
+
 @pytest.mark.parametrize("head", ["mlp", "linear"])
 def test_train_gated_object_smoke(data, head):
     key = jax.random.PRNGKey(0)
