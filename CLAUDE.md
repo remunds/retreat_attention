@@ -1,0 +1,53 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project goal
+
+See `project.md` for the full write-up. In short: this project builds an object-centric world model for Atari Pong (via [JAXAtari](https://github.com/k4ntz/JAXAtari)) that predicts each object's (player paddle, enemy paddle, ball) next state **independently**, deciding at every timestep which other objects it needs to attend to. The aim is robustness to interventions on object dynamics at inference time — e.g. the ball should only depend on a paddle in the steps around a bounce, not throughout free flight.
+
+Success criterion: the actor scores more than 10 points in Pong with JAXAtari's `lazy_enemy` mod active (enemy paddle only tracks the ball when the ball moves toward it, otherwise stays still) — a dynamics change the model never sees during training.
+
+Key design implications to keep in mind when implementing:
+- Per-object prediction heads/models, not a single tangled whole-scene predictor.
+- Attention/dependency between objects must be computed per timestep (dynamic, not fixed at model-build time).
+- Dependency choices should be inspectable/visualizable per object per step, so it's possible to verify e.g. that the ball only attends to a paddle near bounces.
+- Each object's predictor uses its own history plus the history of whatever it currently attends to; irrelevant objects' information is excluded.
+
+## Environment & commands
+
+This is a `uv`-managed Python project (`pyproject.toml` + `uv.lock`), requiring Python >=3.12. The `jaxatari` dependency is pulled from its GitHub repo (`k4ntz/JAXAtari`), not PyPI.
+
+- Install/sync dependencies: `uv sync`
+- Run the example script: `uv run python experiment.py`
+- Run tests: `uv run pytest` (or `uv run pytest tests/test_jaxatari.py -v` for the JAXAtari smoke tests alone)
+- Collect rollout data: `uv run python -m world_model.data --num-steps 20000 --out artifacts/rollout.npz`
+- Train the baseline per-object predictors: `uv run python -m world_model.train --data artifacts/rollout.npz --out artifacts/baseline_params.pkl`
+- Evaluate an open-loop rollout: `uv run python -m world_model.evaluate --params artifacts/baseline_params.pkl`
+- Train the gated (cross-attention) model: `uv run python -m world_model.train_gated --data artifacts/rollout.npz --out artifacts/gated_params.pkl [--sparsity-weight 0.01] [--temperature-start 2.0 --temperature-end 0.1] [--gate-lr 5e-3] [--head mlp|linear]`
+- Inspect a trained gate's attention against ball court position (confound check): `uv run python -m world_model.inspect_gate --params artifacts/gated_params.pkl --target ball`
+- Collect Seaquest rollouts (train + the "no enemies" test set): `uv run python -m world_model.seaquest_data --num-steps 20000 --out artifacts/seaquest_rollout.npz` and `... --mods disable_enemies --out artifacts/seaquest_rollout_no_enemies.npz`
+
+JAXAtari requires sprite/state assets before any environment can be created (`jaxatari.make(...)` raises `RuntimeError` otherwise). One-time setup: `uv run install-sprites` — this prompts for confirmation of Atari 2600 ROM ownership (use `JAXATARI_CONFIRM_OWNERSHIP=1` to auto-confirm, or decline to install the alternative/replacement sprite pack instead). Assets are cached outside the repo (`platformdirs.user_data_dir("jaxatari")`), so this only needs to be re-run per machine, not per checkout. On Windows terminals with a non-UTF-8 codepage, prefix with `PYTHONIOENCODING=utf-8` to avoid a `UnicodeEncodeError` on the installer's emoji output (the install itself still succeeds without it).
+
+There is no configured linter/formatter yet. `pytest` is a dev dependency (`[dependency-groups].dev` in `pyproject.toml`); tests live under `tests/`.
+
+## Code structure
+
+- `experiment.py` — minimal smoke-test script: loads the JAXAtari `"pong"` env, JIT-compiles `reset`/`step`, runs a few random-action steps, and prints the object-centric state (`player_y`, `enemy_y`, `ball_x`/`ball_y`) plus a rendered frame shape. Useful as a reference for how to drive the JAXAtari Pong env (`jaxatari.make`, `env.reset`, `env.step`, `env.render`, `env.action_space()`) — this is the current entry point into the codebase; the world model itself has not been implemented yet.
+- `project.md` — the project's design doc / spec (goals, approach, success criterion). Treat this as the source of truth for intent when implementing the world model.
+- `tests/test_jaxatari.py` — smoke tests confirming the JAXAtari Pong env loads, steps, and renders correctly (reset, step loop, frame shape).
+- `solutions.md` — running design-discussion doc: candidate architectures for the dependency/gating mechanism, decisions made so far, and current progress/findings. Check this before proposing a new approach or re-deciding something already settled here.
+- `world_model/` — the world model implementation, currently a **plain independent-per-object baseline with no cross-object gating** (see `solutions.md` for why it's a baseline, not the final design):
+  - `objects.py` — per-object state field definitions (player: `y, speed`; enemy: `y, speed`; ball: `x, y, vel_x, vel_y`).
+  - `data.py` — collects random-policy JAXAtari Pong rollouts into per-object state arrays + actions + episode ids.
+  - `windows.py` — builds (history window → next state) supervised pairs per object, respecting episode boundaries.
+  - `model.py` — a small per-object MLP (shared architecture, independent weights/instances per object), plus a plain linear head (`init_linear_params`/`linear_forward`) used by the gated model's `--head linear` option.
+  - `train.py` — trains each object's predictor independently via one-step prediction on ground-truth history (not rollout).
+  - `evaluate.py` — open-loop autoregressive rollout evaluation (predictions fed back in as history) to measure compounding error.
+  - `gated_model.py` / `train_gated.py` — **approach B**: adds a soft, per-target cross-attention gate over candidates — the other two objects, plus (for the player only) its own action as a one-hot embedded token — and a learned "null"/no-dependency option, with a softmax `temperature` (annealed over training), an entropy penalty, and an optional linear (vs. MLP) predictor head. See `solutions.md` for current findings — sharpening attention (via temperature or a linear head that can't compensate for bad context) does NOT reliably mean the gate learned the *correct* dependency: a court-position diagnostic (`inspect_gate.py`) caught the ball predictor's sharp, improving attention on "enemy" as a spurious shortcut (constant regardless of which side of the court the ball is on, i.e. not proximity-based) rather than genuine bounce-relevant gating. This is an open problem, not a finished mechanism — treat any future gate's numbers as unverified until checked this way.
+  - `inspect_gate.py` — diagnostic: recomputes a trained gate's attention weights over the full dataset and buckets them by ball court-position, to catch confounded/spurious dependencies that look sharp and MSE-improving but aren't actually proximity-based.
+  - `seaquest_objects.py` / `seaquest_data.py` — a **second environment** (JAXAtari Seaquest), added to eventually test whether any dependency-gating approach generalizes beyond Pong. Kept parallel to the Pong modules, not integrated into them. `seaquest_data.py` supports JAXAtari's built-in `disable_enemies` mod as the "no enemies" test set (Seaquest's analogue of Pong's `lazy_enemy`). Seaquest's enemies are variable-cardinality (up to 12 sharks + 12 subs at once, unlike Pong's one fixed enemy), so `seaquest_objects.py` reduces this to a single **"threat" object** — nearest active shark-or-sub to the player — as a deliberate, documented simplification, not a solved multi-instance design. See `solutions.md` for a caveat: under a random policy, only ~31% of steps have any active threat at all, and removing enemies barely changed episode length (1333 → 1177 mean steps) — most random-policy deaths aren't enemy contact, so this data source is sparse in exactly the signal a future gate would need to learn from. `train.py`/`train_gated.py` are NOT yet generalized to run on this data — that's future work.
+- `tests/test_world_model.py` — fast smoke test over the whole plain-baseline pipeline (small rollout, 1 epoch of training, short eval rollout).
+- `tests/test_gated_model.py` — fast smoke test over the gated (approach B) pipeline.
+- `tests/test_seaquest.py` — smoke tests for the Seaquest env plumbing, including verifying `disable_enemies` actually zeroes the extracted "threat" object throughout a rollout.
