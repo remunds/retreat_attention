@@ -206,3 +206,38 @@ def leakage(predict_fn, frames_win, actions, key, near_px=40.0):
                 for cname, c in (("near", near & moving), ("far", far_moving), ("waiting", ~moving)):
                     out[f"ball<-enemy_{cname}"] = float(jnp.sqrt(jnp.sum(jnp.where(c, d[:, i] ** 2, 0)) / jnp.maximum(c.sum(), 1)))
     return out
+
+
+ENEMY_Y_IDX = int(POS_IDX[1, 1])
+
+
+@partial(jax.jit, static_argnums=(0, 1, 2))
+def evaluate_frozen_enemy_view(env, act_fn, max_steps, act_params, keys):
+    """Like `evaluate`, but the actor sees the enemy frozen at a random height (one per game).
+
+    A robustness check on *unmodified* Pong: the game itself is unchanged, only the actor's view
+    of the enemy is replaced (a generic "sensor failure" of one object). Returns (player, enemy,
+    finished) per game.
+    """
+
+    def run_one(k):
+        k_reset, k_run, k_view = jax.random.split(k, 3)
+        frozen_y = jax.random.uniform(k_view, (), minval=24.0, maxval=190.0)
+        obs, state = env.reset(k_reset)
+
+        def body(carry, k):
+            obs, state, ps, es, over = carry
+            a = act_fn(act_params, obs.at[:, ENEMY_Y_IDX].set(frozen_y), k)
+            obs2, state2, r, term, trunc, info = env.step(state, a)
+            er = info["env_reward"]
+            live = jnp.logical_not(over)
+            ps = ps + jnp.where(live, jnp.maximum(er, 0), 0)
+            es = es + jnp.where(live, jnp.maximum(-er, 0), 0)
+            over = jnp.logical_or(over, info["env_done"])
+            return (obs2, state2, ps, es, over), None
+
+        init = (obs, state, jnp.array(0.0), jnp.array(0.0), jnp.array(False))
+        (_, _, ps, es, over), _ = jax.lax.scan(body, init, jax.random.split(k_run, max_steps))
+        return ps, es, over
+
+    return jax.vmap(run_one)(keys)

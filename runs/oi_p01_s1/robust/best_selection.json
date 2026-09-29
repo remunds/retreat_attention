@@ -1,0 +1,91 @@
+{
+ "selected": {
+  "ckpt": "runs/oi_p01_s1/round4.pkl",
+  "greedy": true,
+  "pong_final": 18.09375,
+  "frozen_view_final": 18.40625,
+  "score": 18.25
+ },
+ "candidates": [
+  {
+   "ckpt": "runs/oi_p01_s1/round0.pkl",
+   "greedy": true,
+   "pong_final": 8.125,
+   "frozen_view_final": 2.65625,
+   "score": 5.390625
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round0.pkl",
+   "greedy": false,
+   "pong_final": 5.71875,
+   "frozen_view_final": 4.1875,
+   "score": 4.953125
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round1.pkl",
+   "greedy": true,
+   "pong_final": 8.59375,
+   "frozen_view_final": 9.75,
+   "score": 9.171875
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round1.pkl",
+   "greedy": false,
+   "pong_final": 6.53125,
+   "frozen_view_final": 4.875,
+   "score": 5.703125
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round2.pkl",
+   "greedy": true,
+   "pong_final": 15.75,
+   "frozen_view_final": 15.3125,
+   "score": 15.53125
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round2.pkl",
+   "greedy": false,
+   "pong_final": 13.5625,
+   "frozen_view_final": 12.375,
+   "score": 12.96875
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round3.pkl",
+   "greedy": true,
+   "pong_final": 13.375,
+   "frozen_view_final": 13.59375,
+   "score": 13.484375
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round3.pkl",
+   "greedy": false,
+   "pong_final": 14.15625,
+   "frozen_view_final": 13.84375,
+   "score": 14.0
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round4.pkl",
+   "greedy": true,
+   "pong_final": 18.09375,
+   "frozen_view_final": 18.40625,
+   "score": 18.25
+  },
+  {
+   "ckpt": "runs/oi_p01_s1/round4.pkl",
+   "greedy": false,
+   "pong_final": 15.96875,
+   "frozen_view_final": 17.0625,
+   "score": 16.515625
+  }
+ ],
+ "args": {
+  "module": "experiment_observation_interventions",
+  "runs": [
+   "runs/oi_p01_s1"
+  ],
+  "out": "runs/oi_p01_s1/robust/best.pkl",
+  "games": 32,
+  "max_steps": 10000,
+  "seed": 777
+ }
+}
