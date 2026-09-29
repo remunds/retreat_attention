@@ -3,6 +3,10 @@
 Code: `experiment_receiver_gates.py` (full pipeline of `experiment_intervention_actor.py` with a
 different world model).
 
+## Summary
+
+Gates decided from the receiving object's own state only, g_ij = HC(f_i(e_i)), so that an unusual enemy cannot open the ball's gate. World-model-only test: the gates collapsed to state-independent constants and the ball stopped listening to the player, so the variant was abandoned.
+
 ## Goal
 
 Make the world model object-contained, so that the actor can be trained under enemy interventions

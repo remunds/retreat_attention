@@ -55,6 +55,13 @@ Every experiment file gets an accompanying Markdown file with the same name (e.g
 
 Keep this file up to date as runs finish, and commit it together with the code.
 
+### Experiment dashboard
+
+- `dashboard/` holds a dashboard with one card per experiment (status, summary, research question, scores, training curve, runs, and a video of the world model with its actor). It finds experiments and runs automatically; see `dashboard/README.md`.
+- Start each experiment's Markdown file with a `## Summary` section (1-3 sentences: the approach and its outcome) and list every run's exact command (with `--name <run>`) in it, so the dashboard can show and attribute it.
+- After a run finishes or an experiment's Markdown changes, rebuild with `CUDA_VISIBLE_DEVICES= uv run dashboard/build_dashboard.py` (CPU only) and commit `dashboard/` with the experiment. If you have the Artifact tool, also republish the hosted copy as described in `dashboard/README.md`.
+- The dashboard only displays `lazy_enemy` results. Do not use it for model selection or tuning.
+
 ## Robustness evaluation with `lazy_enemy`
 
 - The JAXAtari **`lazy_enemy`** mod can be used to check whether a learned world model is robust to changed object dynamics (see `project.md`; the goal is an actor reaching a final score (own points minus enemy points) of at least +10 with the mod active).

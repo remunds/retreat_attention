@@ -1,0 +1,1482 @@
+{
+ "generated": 1790674943.5805461,
+ "generated_iso": "2026-09-29T11:42:23",
+ "git": "dad3e5d Add experiments 2-5 (enemy interventions, gated actor, receiver-driven gates) and leakage diagnostics",
+ "target": 10.0,
+ "experiments": [
+  {
+   "module": "experiment_sparse_object_wm",
+   "py": "experiment_sparse_object_wm.py",
+   "md": "experiment_sparse_object_wm.md",
+   "title": "Experiment 1: sparse-gated object-interaction world model + PPO in imagination",
+   "number": 1,
+   "summary": "A per-object world model whose objects exchange messages through sigmoid gates (L1 penalty), recomputed at every step, trained on unmodified Pong. A PPO actor is trained purely inside it over 5 Dreamer-style rounds. It wins Pong 21 : 2 but loses with `lazy_enemy` (final score -8.4), and the ball's prediction uses the enemy as a shortcut.",
+   "summary_source": "md",
+   "goal": "Train an actor **entirely inside a learned world model**, where the world model is fitted only to\ndata from **unmodified Pong** (JAXAtari object-centric inputs), so that the actor scores **more than\n10 points per game** in Pong with the `lazy_enemy` mod active (which it never sees during training).\n\n> Note: the success criterion was later clarified as a **final score (agent points minus enemy\n> points) of at least +10**, i.e. the agent has to win. See the results below.",
+   "question": "Can a world model with per-object predictions and sparse, per-step gated interactions, trained on\nunmodified Pong only, produce (via pure imagination training) an actor that stays strong when one\nobject's dynamics (the enemy paddle) are changed at test time? And do the learned gates actually\nselect only the objects each prediction needs?",
+   "results": "World model (validation, held-out envs, 8-step open-loop, MSE in units of (8 px)^2) and actor score\non **real unmodified Pong** per round (player : enemy points per game, mean over 32 games):\n\n| round | data | WM val loss | Pong (sampled) | Pong (greedy) |\n|---|---|---|---|---|\n| 0 | 512k random | 1.43 | 20.81 : 15.25 | 20.97 : 10.25 |\n| 1 | +512k actor | 1.36 | 21.00 : 9.97 | 21.00 : 9.91 |\n| 2 | +512k actor | 1.48 | 21.00 : 3.16 | **20.59 : 1.59** (selected) |\n| 3 | +512k actor | 1.35 | 21.00 : 6.19 | 21.00 : 4.62 |\n| 4 | +512k actor | 1.30 | 21.00 : 8.28 | 20.97 : 7.69 |\n\nHeld-out evaluation of the selected checkpoint (round 2, greedy), 32 games each:\n\n| environment | player points / game | enemy points / game | games with > 10 points |\n|---|---|---|---|\n| Pong (unmodified) | 21.00 \u00b1 0.00 | 2.03 | 32 / 32 |\n| **`lazy_enemy`** | **12.62 \u00b1 2.81** (min 7, max 18) | 21.00 | 25 / 32 |\n\nThis met the originally written criterion (> 10 points per game: 12.62), but **not the clarified\ncriterion**: the final score with `lazy_enemy` is 12.62 - 21.00 = **-8.38** (the actor loses every\ngame), versus +18.97 on unmodified Pong. Experiment 2 (`experiment_intervention_actor.md`) addresses this.\n\nWorld-model open-loop RMSE in pixels on trajectories of the actor (1 / 10 steps ahead):\n\n| object | Pong h1 | Pong h10 | `lazy_enemy` h1 | `lazy_enemy` h10 |\n|---|---|---|---|---|\n| player | 2.4 | 6.7 | 2.5 | 7.4 |\n| enemy | 2.6 | 10.8 | 7.5 | 33.7 |\n| ball | 3.4 | 13.0 | 7.6 | 26.5 |\n\nAverage gates (how much object *row* uses token *column*), on Pong:\n\n| receiver | player | enemy | ball | action |\n|---|---|---|---|---|\n| player | 1 | 0.04 | 0.11 | 0.48 |\n| enemy | 0.01 | 1 | 0.37 | 0.13 |\n| ball | 0.04 | 0.60 | 1 | 0.08 |\n\nPlots: `runs/sow_v1/gates_pong.png`, `runs/sow_v1/gates_lazy_enemy.png`.\n\n### Interpretation\n\n- Pure imagination training works well: already after round 0 (world model fitted to random-play\n  data only) the actor wins real Pong, and after round 2 it wins 21 : 2.\n- The actor transfers to `lazy_enemy` well enough to meet the criterion (12.6 points), but it is\n  clearly hurt: it now *loses* the games (12.6 : 21). In the gate plots the actor often misses\n  balls when the enemy paddle is stuck at a position it never had in training, so the policy\n  itself reacts to the out-of-distribution enemy position.\n- The gates are sparse and meaningful for the player (it uses the action, and the ball only near\n  hits) and for the ball's use of the **player** and **action** (only around the player's hits).\n  But the ball also relies strongly on the **enemy** (gate ~0.6, high whenever the ball moves\n  toward the enemy), and the enemy uses the ball. In unmodified Pong the enemy tracks `ball_y`,\n  so the enemy's position is a shortcut for the ball's position. Under `lazy_enemy` this shortcut\n  breaks, and the ball's prediction error roughly doubles (3.4 -> 7.6 px at 1 step). So the world\n  model is **not yet** robust in the intended, object-contained way: the change to the enemy\n  leaks into the ball's prediction.\n- Next steps: make the ball's dependence on the enemy contextual (e.g. stronger or hard-concrete\n  gates, gate penalties that favour the object's own history, or interventional data\n  augmentation such as randomly perturbing the enemy's history during world-model training on\n  unmodified Pong), and make the actor ignore objects it does not need (e.g. an object-attention\n  policy with the same sparsity bias).",
+   "setup": "- **Environment / inputs:** `AtariWrapper` -> `ObjectCentricWrapper` (frame skip 4, frame stack 4,\n  sticky actions 0.25, noop resets). From each OC frame we use (x, y) of player, enemy and ball.\n- **World model `SparseObjectWM`:** per-object encoders over the object's own last K=16 frames\n  (positions + velocities); for every receiving object i and every other token j (two other\n  objects + action token), a message `LayerNorm(MLP(e_i, e_j))` scaled by a gate\n  `g_ij = sigmoid(MLP(e_i, e_j))` recomputed every step; L1 penalty on the gates (coef 0.01);\n  per-object heads predict the next displacement; the ball head also predicts the reward\n  (point won / lost / none). Trained with an 8-step open-loop (autoregressive) MSE + reward CE loss.\n- **Actor:** PPO (2 x 256 MLP actor and critic) on 2048 imagined environments whose step function\n  is the world model (ball/enemy positions rounded to integers). Imagined episodes start from real\n  16-frame histories of the replay buffer, end when the model predicts a point (one rally = one\n  episode) or after 256 steps (value bootstrap). The actor never trains on real transitions.\n- **Rounds (Dreamer-style):** round 0 collects 512k real steps with a random policy; rounds 1-4\n  collect 512k steps each with the current actor (10 % random actions). Each round: fit the world\n  model on all data (20k steps, batch 512), then 400 PPO updates in imagination\n  (~105M imagined steps per round), then evaluate on real unmodified Pong (32 full games).\n- **Model selection:** the round and action mode (greedy vs. sampled) with the best\n  *unmodified-Pong* score difference. `lazy_enemy` was evaluated once, afterwards, on the selected\n  checkpoint only.",
+   "mtime": 1790613067.7806513,
+   "runs": [
+    {
+     "name": "sow_v1",
+     "mtime": 1790614640.8648612,
+     "config": {
+      "name": "sow_v1",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.01,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "round_int": 1,
+      "imag_len": 256,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 2,
+      "greedy": true,
+      "pong_score_diff": 19.0
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.433959722518921,
+       "pong_sample": 5.5625,
+       "pong_greedy": 10.71875,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.3602372407913208,
+       "pong_sample": 11.03125,
+       "pong_greedy": 11.09375,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.4802722930908203,
+       "pong_sample": 17.84375,
+       "pong_greedy": 19.0,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.3459197282791138,
+       "pong_sample": 14.8125,
+       "pong_greedy": 16.375,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.29636549949646,
+       "pong_sample": 12.71875,
+       "pong_greedy": 13.28125,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/sow_v1/lazy_enemy_eval.json",
+       "ckpt": "runs/sow_v1/best.pkl",
+       "round": 2,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 21.0,
+       "pong_enemy": 2.03125,
+       "pong_final": 18.96875,
+       "lazy_player": 12.625,
+       "lazy_enemy": 21.0,
+       "lazy_final": -8.375,
+       "lazy_won": 0,
+       "rmse_ball_h1": [
+        3.4402849674224854,
+        7.562170028686523
+       ],
+       "rmse_enemy_h1": [
+        2.5809485912323,
+        7.541731834411621
+       ],
+       "mtime": 1790614640.8648612
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/sow_v1/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    }
+   ],
+   "status": "evaluated",
+   "updated": 1790614640.8648612,
+   "video": {
+    "src": "media/experiment_sparse_object_wm.mp4",
+    "ckpt": "runs/sow_v1/round4.pkl",
+    "ckpt_mtime": 1790614577.3955734,
+    "run": "sow_v1",
+    "label": "round 4 (latest)",
+    "rendered": 1790674850.0009434,
+    "steps": 450,
+    "fps": 15,
+    "greedy": false,
+    "has_actor": true,
+    "imagined_points": {
+     "agent": 6,
+     "enemy": 0
+    }
+   }
+  },
+  {
+   "module": "experiment_intervention_actor",
+   "py": "experiment_intervention_actor.py",
+   "md": "experiment_intervention_actor.md",
+   "title": "Experiment 2: L0-gated object world model + actor trained under enemy interventions",
+   "number": 2,
+   "summary": "Hard-concrete (L0) gates in the world model, and an actor trained in imagination under random interventions on the enemy's dynamics (freeze, scaled motion, random walk). The `lazy_enemy` final score rose to +0.2, but the ball kept every gate open, so the enemy interventions also distorted the imagined ball.",
+   "summary_source": "md",
+   "goal": "Reach a **final score (agent points minus enemy points) of at least +10** with `lazy_enemy`, using\nan actor trained only inside a world model fitted to unmodified Pong. Experiment 1 lost with\n`lazy_enemy` (12.6 : 21 = -8.4).",
+   "question": "1. Do hard-concrete (L0) gates make the world model object-contained, i.e. is the ball's\n   prediction invariant to the enemy far from a bounce?\n2. Does training the actor in imagination under random interventions on the enemy's mechanism\n   (freeze / scaled motion / random walk, all applied to the world model's enemy prediction) make\n   it robust to a changed enemy?",
+   "results": "Leakage of the ball's 1-step prediction when the enemy's history is swapped (pixels; the reference\nis experiment 1's final model: far 4.3 on actor data, 14.3 for its round-0 model on random data):\n\n| model | ball<-enemy near | ball<-enemy far (ball moving) | ball waiting to be served |\n|---|---|---|---|\n| WM-only, gate_coef 0.05 | 4.75 | 11.02 | \u2014 |\n| WM-only, gate_coef 0.2 | 5.70 | 10.56 | \u2014 |\n| `ia_v1` round 0 | 4.36 | 12.38 | 1.28 |\n| `ia_v1` round 4 | 4.77 | 6.56 | 0.80 |\n\nReal unmodified Pong during training (player : enemy, 32 games):\n\n| round | WM val loss | sampled | greedy |\n|---|---|---|---|\n| 0 | 1.60 | 18.53 : 18.31 | 18.66 : 17.09 |\n| 1 | 1.47 | 20.53 : 15.31 | 20.78 : 14.75 |\n| 2 | 1.59 | 21.00 : 9.03 | 20.75 : 5.25 |\n| 3 | 1.51 | 21.00 : 5.72 | 21.00 : 4.53 |\n| 4 | 1.31 | 21.00 : 3.78 | **21.00 : 2.53** (selected) |\n\nHeld-out evaluation of the selected checkpoint (32 games, seeds from `PRNGKey(12345)`):\n\n| environment | player : enemy | final score | games won |\n|---|---|---|---|\n| Pong | 21.00 : 3.25 | +17.75 | 32 / 32 |\n| **`lazy_enemy`** | 19.31 : 19.12 | **+0.19** | 17 / 32 |\n\nWorld-model 1-step RMSE on `lazy_enemy` trajectories: ball 5.1 px (1.5 on Pong), enemy 6.7 px.\n\n**Criterion not met** (+0.19 < +10), but a large improvement over experiment 1 (-8.38).\n\n### Interpretation\n\n- The L0 gates did **not** make the ball object-contained. The player's gates became clean\n  (it uses only the action), but the ball kept *all* gates open at every step\n  (`runs/ia_v1/gates_*.png`), so the ball's prediction reacts to the enemy even in free flight.\n- The enemy interventions still helped a lot (-8.4 -> +0.2): the actor now wins half of the\n  `lazy_enemy` games. But because the world model's ball depends on the enemy, intervening on the\n  enemy also changes the imagined ball's flight. The actor is taught a false causal link\n  (\"the enemy's position moves the ball\") and keeps reacting to the enemy. For interventions in\n  imagination to teach the right lesson, the world model has to be causally correct (see\n  experiments 4 and 5), or the intervention must not pass through the world model (experiment 6).",
+   "setup": "",
+   "mtime": 1790668061.545285,
+   "runs": [
+    {
+     "name": "wmonly_g0.2",
+     "mtime": 1790666907.4802396,
+     "config": {
+      "name": "wmonly_g0.2",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.2,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 1.7812726497650146,
+      "mse_ball": 0.3849952220916748,
+      "open_gates": 1.0845060348510742,
+      "leakage": {
+       "enemy<-player": 0.0,
+       "ball<-player": 1.4201291799545288,
+       "player<-enemy": 0.0,
+       "ball<-enemy": 10.109374046325684,
+       "ball<-enemy_far": 10.55931282043457,
+       "ball<-enemy_near": 5.698366165161133,
+       "player<-ball": 0.0,
+       "enemy<-ball": 12.866897583007812
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": null
+    },
+    {
+     "name": "wmonly_g0.05",
+     "mtime": 1790666939.9313316,
+     "config": {
+      "name": "wmonly_g0.05",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.05,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 1.5853803157806396,
+      "mse_ball": 0.35062649846076965,
+      "open_gates": 1.8196561336517334,
+      "leakage": {
+       "enemy<-player": 0.0,
+       "ball<-player": 1.3521063327789307,
+       "player<-enemy": 0.0,
+       "ball<-enemy": 10.481142044067383,
+       "ball<-enemy_far": 11.02266788482666,
+       "ball<-enemy_near": 4.747838497161865,
+       "player<-ball": 0.0010155256604775786,
+       "enemy<-ball": 12.157326698303223
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": null
+    },
+    {
+     "name": "ia_v1",
+     "mtime": 1790669659.9177527,
+     "config": {
+      "name": "ia_v1",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.05,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 0,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 4,
+      "greedy": true,
+      "pong_score_diff": 18.46875
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.6025310754776,
+       "pong_sample": 0.21875,
+       "pong_greedy": 1.5625,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.4651609659194946,
+       "pong_sample": 5.21875,
+       "pong_greedy": 6.03125,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.589318037033081,
+       "pong_sample": 11.96875,
+       "pong_greedy": 15.5,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.5092766284942627,
+       "pong_sample": 15.28125,
+       "pong_greedy": 16.46875,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.306694507598877,
+       "pong_sample": 17.21875,
+       "pong_greedy": 18.46875,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/ia_v1/lazy_enemy_eval.json",
+       "ckpt": "runs/ia_v1/best.pkl",
+       "round": 4,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 21.0,
+       "pong_enemy": 3.25,
+       "pong_final": 17.75,
+       "lazy_player": 19.3125,
+       "lazy_enemy": 19.125,
+       "lazy_final": 0.1875,
+       "lazy_won": 17,
+       "rmse_ball_h1": [
+        1.4768643379211426,
+        5.124632835388184
+       ],
+       "rmse_enemy_h1": [
+        0.8377842903137207,
+        6.710597515106201
+       ],
+       "mtime": 1790669659.9177527
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/ia_v1/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    }
+   ],
+   "status": "evaluated",
+   "updated": 1790669659.9177527,
+   "video": {
+    "src": "media/experiment_intervention_actor.mp4",
+    "ckpt": "runs/ia_v1/round4.pkl",
+    "ckpt_mtime": 1790669280.4055676,
+    "run": "ia_v1",
+    "label": "round 4 (latest)",
+    "rendered": 1790674855.4497178,
+    "steps": 450,
+    "fps": 15,
+    "greedy": false,
+    "has_actor": true,
+    "imagined_points": {
+     "agent": 8,
+     "enemy": 0
+    }
+   }
+  },
+  {
+   "module": "experiment_gated_actor",
+   "py": "experiment_gated_actor.py",
+   "md": "experiment_gated_actor.md",
+   "title": "Experiment 3: object-gated actor (sparse attention over objects) trained in imagination",
+   "number": 3,
+   "summary": "Experiment 1's world model with an actor that gates its object inputs (ball, enemy) per step with hard-concrete gates and an expected-L0 penalty. The gates stayed open because the enemy is useful in unmodified Pong; `lazy_enemy` final score -4.9.",
+   "summary_source": "md",
+   "goal": "Reach a **final score of at least +10** with `lazy_enemy` with an actor trained only in a world\nmodel of unmodified Pong, by letting the *actor* decide per step which objects it looks at (as the\nworld model does), with a penalty for looking, so that it stops depending on the enemy.",
+   "question": "Does an expected-L0 penalty on per-step hard-concrete gates over the actor's object tokens (ball,\nenemy; the player's own token is always used) make the actor ignore the enemy, and does that make\nit robust to `lazy_enemy`?",
+   "results": "`ga_v3` on real unmodified Pong during training (player : enemy, 32 games):\n\n| round | sampled | greedy |\n|---|---|---|\n| 0 | 4.41 : 21.00 | 2.31 : 21.00 |\n| 1 | 20.72 : 14.47 | 20.97 : 14.00 |\n| 2 | 21.00 : 6.66 | 21.00 : 6.06 |\n| 3 | 21.00 : 4.94 | 21.00 : 2.91 |\n| 4 | **21.00 : 1.66** (selected) | 21.00 : 1.88 |\n\nThe actor's gates stayed fully open during all rounds (gate_ball = gate_enemy = 1.0): the actor's\nreturn improvement from reading the enemy outweighed the penalty.\n\nHeld-out evaluation of the selected checkpoint (32 games):\n\n| environment | player : enemy | final score | games won |\n|---|---|---|---|\n| Pong | 21.00 : 1.59 | +19.41 | 32 / 32 |\n| **`lazy_enemy`** | 15.97 : 20.91 | **-4.94** | 2 / 32 |\n\n**Criterion not met.**\n\n### Interpretation\n\nA learned, reward-driven sparsity penalty on the actor's attention did not make it drop the\nenemy: in unmodified Pong the enemy's position is genuinely useful for the actor (and it is highly\ncorrelated with the ball), so the gate stays open, and the actor behaves like experiment 1's MLP\nactor (-8.4 there, -4.9 here). Either the penalty is too weak to remove useful information, or too\nstrong and removes the ball too (`ga_v1`). Being useful in training is not the same as being\ncausally needed, which a penalty on the training objective cannot tell apart.",
+   "setup": "",
+   "mtime": 1790668706.6359112,
+   "runs": [
+    {
+     "name": "ga_v3",
+     "mtime": 1790670623.6377068,
+     "config": {
+      "name": "ga_v3",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef_wm": 0.01,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "round_int": 1,
+      "imag_len": 256,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "gate_coef": 0.05,
+      "gate_init": 1.0,
+      "gate_warmup": 400,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 4,
+      "greedy": false,
+      "pong_score_diff": 19.34375
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.4506534337997437,
+       "pong_sample": -16.59375,
+       "pong_greedy": -18.6875,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.527611494064331,
+       "pong_sample": 6.25,
+       "pong_greedy": 6.96875,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.2449909448623657,
+       "pong_sample": 14.34375,
+       "pong_greedy": 14.9375,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.1807265281677246,
+       "pong_sample": 16.0625,
+       "pong_greedy": 18.09375,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.1831721067428589,
+       "pong_sample": 19.34375,
+       "pong_greedy": 19.125,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/ga_v3/lazy_enemy_eval.json",
+       "ckpt": "runs/ga_v3/best.pkl",
+       "round": 4,
+       "greedy": false,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 21.0,
+       "pong_enemy": 1.59375,
+       "pong_final": 19.40625,
+       "lazy_player": 15.96875,
+       "lazy_enemy": 20.90625,
+       "lazy_final": -4.9375,
+       "lazy_won": 2,
+       "rmse_ball_h1": [
+        0.9124042391777039,
+        7.04865837097168
+       ],
+       "rmse_enemy_h1": [
+        0.6879123449325562,
+        7.461963653564453
+       ],
+       "mtime": 1790670623.6377068
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/ga_v3/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    }
+   ],
+   "status": "evaluated",
+   "updated": 1790670623.6377068,
+   "video": {
+    "src": "media/experiment_gated_actor.mp4",
+    "ckpt": "runs/ga_v3/round4.pkl",
+    "ckpt_mtime": 1790670337.1916447,
+    "run": "ga_v3",
+    "label": "round 4 (latest)",
+    "rendered": 1790674861.3794274,
+    "steps": 450,
+    "fps": 15,
+    "greedy": false,
+    "has_actor": true,
+    "imagined_points": {
+     "agent": 14,
+     "enemy": 0
+    }
+   }
+  },
+  {
+   "module": "experiment_receiver_gates",
+   "py": "experiment_receiver_gates.py",
+   "md": "experiment_receiver_gates.md",
+   "title": "Experiment 4: receiver-driven L0 gates in the world model",
+   "number": 4,
+   "summary": "Gates decided from the receiving object's own state only, g_ij = HC(f_i(e_i)), so that an unusual enemy cannot open the ball's gate. World-model-only test: the gates collapsed to state-independent constants and the ball stopped listening to the player, so the variant was abandoned.",
+   "summary_source": "md",
+   "goal": "Make the world model object-contained, so that the actor can be trained under enemy interventions\n(experiment 2) without the imagined ball reacting to the enemy, and ultimately reach a final score\nof at least +10 with `lazy_enemy`.",
+   "question": "If whether object i listens to object j is decided from i's own state only\n(g_ij = HC(f_i(e_i))_j), can an unusual enemy no longer open the ball's gate, so that the ball's\nfree flight is exactly invariant to the enemy?",
+   "results": "| model | val loss | 8-step ball MSE | open gates / receiver | ball<-player leak | ball<-enemy near / far / waiting |\n|---|---|---|---|---|---|\n| exp. 2 L0 pair gates (reference) | 1.59 | 0.35 | 1.82 | 1.35 | 4.75 / 11.02 / \u2014 |\n| receiver-driven L0 gates | 2.11 | 0.61 | 1.33 (constant) | 0.00 | 6.06 / 11.29 / 1.88 |\n\nThe gates collapsed to constant values that do not depend on the state (exactly 4 of 9 gates open\nfor every sample). The ball *never* listens to the player (so it cannot bounce off the player's\npaddle correctly; the ball's error nearly doubled), and it *always* listens to the enemy.\n\n### Interpretation\n\nReceiver-driven hard-concrete gates got stuck in a bad optimum. In random-policy data the player\nrarely hits the ball, so ball<-player is rarely useful and the penalty closes it; ball<-enemy stays\nopen everywhere. This variant was abandoned in favour of receiver-driven soft / straight-through\ngates (experiment 5).",
+   "setup": "",
+   "mtime": 1790668051.4512594,
+   "runs": [
+    {
+     "name": "rg_wmonly",
+     "mtime": 1790668647.2997622,
+     "config": {
+      "name": "rg_wmonly",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.05,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 2.1069886684417725,
+      "mse_ball": 0.6081611514091492,
+      "open_gates": 1.3333430290222168,
+      "leakage": {
+       "enemy<-player": 0.0,
+       "ball<-player": 0.0,
+       "player<-enemy": 0.0,
+       "ball<-enemy": 9.12714958190918,
+       "ball<-enemy_near": 6.056416034698486,
+       "ball<-enemy_far": 11.286861419677734,
+       "ball<-enemy_waiting": 1.8804106712341309,
+       "player<-ball": 0.0,
+       "enemy<-ball": 12.692094802856445
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/rg_wmonly/wm_only.pkl",
+      "label": "world model only"
+     }
+    }
+   ],
+   "status": "wm_only",
+   "updated": 1790668647.2997622,
+   "video": {
+    "src": "media/experiment_receiver_gates.mp4",
+    "ckpt": "runs/rg_wmonly/wm_only.pkl",
+    "ckpt_mtime": 1790668647.2947624,
+    "run": "rg_wmonly",
+    "label": "world model only",
+    "rendered": 1790674866.6304624,
+    "steps": 450,
+    "fps": 15,
+    "greedy": false,
+    "has_actor": false,
+    "imagined_points": {
+     "agent": 1,
+     "enemy": 27
+    }
+   }
+  },
+  {
+   "module": "experiment_receiver_soft_gates",
+   "py": "experiment_receiver_soft_gates.py",
+   "md": "experiment_receiver_soft_gates.md",
+   "title": "Experiment 5: receiver-driven soft / straight-through gates in the world model",
+   "number": 5,
+   "summary": "Receiver-driven soft (sigmoid + L1) and binary straight-through gates, plus an ablation of how much the ball's prediction needs the enemy. No variant closed ball <- enemy in free flight, although removing it entirely costs little accuracy.",
+   "summary_source": "md",
+   "goal": "Make the world model object-contained (the ball ignores the enemy except near a bounce), as a\nprerequisite for training the actor under enemy interventions (experiment 2), with the final aim of\na final score of at least +10 with `lazy_enemy`.",
+   "question": "1. How much does the ball's prediction actually need the enemy? (ablation)\n2. Do receiver-driven gates with a deterministic sigmoid (L1 penalty, thresholded at 0.1 when used)\n   or with binary straight-through gates remove the ball<-enemy leakage?",
+   "results": "**Ablation**: the ball's 1-step error (pixels, mean) with and without messages from the enemy:\n\n| ball position / direction | with enemy | without enemy |\n|---|---|---|\n| x < 30, towards enemy (bounce zone) | 3.08 | 3.86 |\n| 30 <= x < 60 | 0.52 / 0.74 | 0.58 / 0.87 |\n| 60 <= x < 120 | 0.77 / 0.37 | 0.86 / 0.44 |\n| x >= 120 (player side) | 2.20 / 1.44 | 2.60 / 2.01 |\n| **all** | **0.71** | **0.90** |\n\nThe enemy helps the ball's prediction mainly at the enemy's bounce, and only slightly elsewhere.\n\nIn unmodified Pong the enemy's height is always close to the ball's (99 % of gaps < 19 px when the\nball is far from the enemy). Swapping in an enemy with a larger gap is out of distribution; for\nexperiment 1's model the ball's change grows from 5 px (gap < 10 px) to 19 px (gap > 60 px).\n\n**Receiver-driven gates** (leakage in pixels, ball<-enemy):\n\n| gates | gate_coef | 8-step ball MSE | open gates / receiver | near | far (moving) | waiting |\n|---|---|---|---|---|---|---|\n| soft (sigmoid + L1, thr. 0.1) | 0.02 | 0.36 | 0.77 | 6.03 | 12.16 | 1.76 |\n| soft (sigmoid + L1, thr. 0.1) | 0.1 | 0.35 | 0.28 | 5.66 | 12.38 | 0.31 |\n| straight-through binary | 0.02 | 0.33 | 0.80 | 7.82 | 12.93 | 0.30 |\n| straight-through binary | 0.1 | 0.34 | 0.49 | 5.01 | 13.32 | 0.27 |\n\n### Interpretation\n\nNone of the gating variants closes ball<-enemy in free flight, even though the ablation shows that\nit gains the ball little there, and even with binary gates where an open gate costs the full\npenalty. The gate penalty only acts on the training distribution, where an enemy that tracks the\nball is a harmless, slightly useful input. Nothing in the unmodified-Pong data tells the model that\nan enemy far from the ball's height should not matter, so sparsity pressure alone does not give\ninvariance to out-of-distribution enemy behaviour. This motivated experiment 6, which applies the\ninterventions to the actor's observation instead of passing them through the world model.",
+   "setup": "",
+   "mtime": 1790670566.7905,
+   "runs": [
+    {
+     "name": "rsg_wmonly_g0.1",
+     "mtime": 1790670329.4716153,
+     "config": {
+      "name": "rsg_wmonly_g0.1",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.1,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 1.469223976135254,
+      "mse_ball": 0.3520129919052124,
+      "open_gates": 0.2751123905181885,
+      "leakage": {
+       "enemy<-player": 0.005753582343459129,
+       "ball<-player": 1.4907894134521484,
+       "player<-enemy": 0.05203789100050926,
+       "ball<-enemy": 9.881268501281738,
+       "ball<-enemy_near": 5.659532070159912,
+       "ball<-enemy_far": 12.37749195098877,
+       "ball<-enemy_waiting": 0.3127559423446655,
+       "player<-ball": 0.17747920751571655,
+       "enemy<-ball": 13.705453872680664
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/rsg_wmonly_g0.1/wm_only.pkl",
+      "label": "world model only"
+     }
+    },
+    {
+     "name": "rsg_wmonly_g0.02",
+     "mtime": 1790670497.642246,
+     "config": {
+      "name": "rsg_wmonly_g0.02",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.02,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 1.5481594800949097,
+      "mse_ball": 0.3630836009979248,
+      "open_gates": 0.7739176750183105,
+      "leakage": {
+       "enemy<-player": 0.05895974487066269,
+       "ball<-player": 1.5686146020889282,
+       "player<-enemy": 0.1838177591562271,
+       "ball<-enemy": 9.781128883361816,
+       "ball<-enemy_near": 6.026293754577637,
+       "ball<-enemy_far": 12.159217834472656,
+       "ball<-enemy_waiting": 1.7579338550567627,
+       "player<-ball": 0.3801910877227783,
+       "enemy<-ball": 13.108131408691406
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/rsg_wmonly_g0.02/wm_only.pkl",
+      "label": "world model only"
+     }
+    },
+    {
+     "name": "rste_wmonly_g0.1",
+     "mtime": 1790670940.2748349,
+     "config": {
+      "name": "rste_wmonly_g0.1",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.1,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000,
+      "gate_type": "ste"
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 1.5603106021881104,
+      "mse_ball": 0.3356669545173645,
+      "open_gates": 0.49075907468795776,
+      "leakage": {
+       "enemy<-player": 0.0,
+       "ball<-player": 1.0532854795455933,
+       "player<-enemy": 0.0,
+       "ball<-enemy": 10.567280769348145,
+       "ball<-enemy_near": 5.013579845428467,
+       "ball<-enemy_far": 13.320630073547363,
+       "ball<-enemy_waiting": 0.26801782846450806,
+       "player<-ball": 0.031811825931072235,
+       "enemy<-ball": 14.085047721862793
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/rste_wmonly_g0.1/wm_only.pkl",
+      "label": "world model only"
+     }
+    },
+    {
+     "name": "rste_wmonly_g0.02",
+     "mtime": 1790671109.821973,
+     "config": {
+      "name": "rste_wmonly_g0.02",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.02,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "wm_only": 1,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.25,
+      "p_freeze": 0.35,
+      "p_scale": 0.2,
+      "p_walk": 0.2,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000,
+      "gate_type": "ste"
+     },
+     "experiment": null,
+     "rounds": [],
+     "rounds_total": 5,
+     "kind": "wm_only",
+     "wm_only": {
+      "val_loss": 1.5342581272125244,
+      "mse_ball": 0.3253965377807617,
+      "open_gates": 0.8025016784667969,
+      "leakage": {
+       "enemy<-player": 0.24977527558803558,
+       "ball<-player": 1.2837915420532227,
+       "player<-enemy": 0.24872355163097382,
+       "ball<-enemy": 10.472478866577148,
+       "ball<-enemy_near": 7.823147773742676,
+       "ball<-enemy_far": 12.932424545288086,
+       "ball<-enemy_waiting": 0.2954022288322449,
+       "player<-ball": 0.446491003036499,
+       "enemy<-ball": 12.956332206726074
+      }
+     },
+     "evals": [],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/rste_wmonly_g0.02/wm_only.pkl",
+      "label": "world model only"
+     }
+    }
+   ],
+   "status": "wm_only",
+   "updated": 1790671109.821973,
+   "video": {
+    "src": "media/experiment_receiver_soft_gates.mp4",
+    "ckpt": "runs/rste_wmonly_g0.02/wm_only.pkl",
+    "ckpt_mtime": 1790671109.815973,
+    "run": "rste_wmonly_g0.02",
+    "label": "world model only",
+    "rendered": 1790674872.0622275,
+    "steps": 450,
+    "fps": 15,
+    "greedy": false,
+    "has_actor": false,
+    "imagined_points": {
+     "agent": 1,
+     "enemy": 9
+    }
+   }
+  },
+  {
+   "module": "experiment_observation_interventions",
+   "py": "experiment_observation_interventions.py",
+   "md": null,
+   "title": "Experiment 6: actor trained in imagination with interventions on its *observation* of the enemy.",
+   "number": 6,
+   "summary": "This experiment avoids needing a causally correct world model for the enemy:\n- Imagination uses experiment 1's world model unchanged (dynamics exactly as learned from\n  unmodified Pong).\n- In each imagined rally, with probability 1 - p_none, the enemy position that the *actor sees* is\n  replaced by an intervened track: `freeze` (the observed enemy stops and restarts at random\n  times), `scale` (it moves with a random fraction/multiple of the true enemy's motion), or\n  `random walk`. The world model, the ball, the reward and the true enemy are not changed. The\n  actor therefore learns that its enemy input can be unreliable and has to win using the ball and\n  its own paddle, while it can still use the enemy when its track looks normal.\n- These are generic interventions on one object's observed dynamics; `lazy_enemy` is never used\n  for training or model selection. The choice to intervene on the enemy (the object not controlled\n  by the agent and not the ball it must hit) is a design decision of this experiment.\n- Everything else (world model, data collection rounds, PPO, MLP actor, selection on unmodified\n  Pong) is identical to experiment 1.",
+   "summary_source": "docstring",
+   "goal": "",
+   "question": "",
+   "results": "",
+   "setup": "",
+   "mtime": 1790671204.363131,
+   "runs": [
+    {
+     "name": "oi_s0",
+     "mtime": 1790672909.822949,
+     "config": {
+      "name": "oi_s0",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.01,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.4,
+      "p_freeze": 0.3,
+      "p_scale": 0.15,
+      "p_walk": 0.15,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 3,
+      "greedy": true,
+      "pong_score_diff": 17.4375
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.3885059356689453,
+       "pong_sample": -4.71875,
+       "pong_greedy": -3.75,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.5268163681030273,
+       "pong_sample": 15.03125,
+       "pong_greedy": 17.15625,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.4115633964538574,
+       "pong_sample": 13.625,
+       "pong_greedy": 13.84375,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.246727705001831,
+       "pong_sample": 15.78125,
+       "pong_greedy": 17.4375,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.2906030416488647,
+       "pong_sample": 16.125,
+       "pong_greedy": 16.40625,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/oi_s0/lazy_enemy_eval.json",
+       "ckpt": "runs/oi_s0/best.pkl",
+       "round": 3,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 21.0,
+       "pong_enemy": 3.9375,
+       "pong_final": 17.0625,
+       "lazy_player": 21.0,
+       "lazy_enemy": 5.375,
+       "lazy_final": 15.625,
+       "lazy_won": 32,
+       "rmse_ball_h1": [
+        1.3091084957122803,
+        5.275427341461182
+       ],
+       "rmse_enemy_h1": [
+        0.8302950859069824,
+        6.912398338317871
+       ],
+       "mtime": 1790672909.822949
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/oi_s0/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    },
+    {
+     "name": "oi_s1",
+     "mtime": 1790672939.333982,
+     "config": {
+      "name": "oi_s1",
+      "seed": 1,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.01,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.4,
+      "p_freeze": 0.3,
+      "p_scale": 0.15,
+      "p_walk": 0.15,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 2,
+      "greedy": true,
+      "pong_score_diff": 17.78125
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.3035426139831543,
+       "pong_sample": -5.09375,
+       "pong_greedy": -7.59375,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.5139895677566528,
+       "pong_sample": 8.53125,
+       "pong_greedy": 12.5,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.5182183980941772,
+       "pong_sample": 16.15625,
+       "pong_greedy": 17.78125,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.4242584705352783,
+       "pong_sample": 14.40625,
+       "pong_greedy": 16.46875,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.32591712474823,
+       "pong_sample": 16.25,
+       "pong_greedy": 15.5625,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/oi_s1/lazy_enemy_eval.json",
+       "ckpt": "runs/oi_s1/best.pkl",
+       "round": 2,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 21.0,
+       "pong_enemy": 3.15625,
+       "pong_final": 17.84375,
+       "lazy_player": 20.375,
+       "lazy_enemy": 17.28125,
+       "lazy_final": 3.09375,
+       "lazy_won": 25,
+       "rmse_ball_h1": [
+        2.7849559783935547,
+        4.496816158294678
+       ],
+       "rmse_enemy_h1": [
+        1.1638301610946655,
+        6.94118070602417
+       ],
+       "mtime": 1790672939.333982
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/oi_s1/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    },
+    {
+     "name": "oi_p01_s0",
+     "mtime": 1790674875.8084424,
+     "config": {
+      "name": "oi_p01_s0",
+      "seed": 0,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.01,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.1,
+      "p_freeze": 0.3,
+      "p_scale": 0.15,
+      "p_walk": 0.15,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 4,
+      "greedy": true,
+      "pong_score_diff": 19.5
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.4826481342315674,
+       "pong_sample": 5.21875,
+       "pong_greedy": 6.9375,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.4273247718811035,
+       "pong_sample": 7.96875,
+       "pong_greedy": 14.65625,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.2749353647232056,
+       "pong_sample": 15.84375,
+       "pong_greedy": 17.875,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.2850395441055298,
+       "pong_sample": 16.78125,
+       "pong_greedy": 18.0,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.1652334928512573,
+       "pong_sample": 19.09375,
+       "pong_greedy": 19.5,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/oi_p01_s0/robust/lazy_enemy_eval.json",
+       "ckpt": "runs/oi_p01_s0/robust/best.pkl",
+       "round": null,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 21.0,
+       "pong_enemy": 1.5,
+       "pong_final": 19.5,
+       "lazy_player": 21.0,
+       "lazy_enemy": 3.78125,
+       "lazy_final": 17.21875,
+       "lazy_won": 32,
+       "rmse_ball_h1": [
+        0.9951054453849792,
+        4.1972222328186035
+       ],
+       "rmse_enemy_h1": [
+        0.8568893671035767,
+        6.902859210968018
+       ],
+       "mtime": 1790674875.8094423
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/oi_p01_s0/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    },
+    {
+     "name": "oi_p01_s1",
+     "mtime": 1790674903.8955367,
+     "config": {
+      "name": "oi_p01_s1",
+      "seed": 1,
+      "rounds": 5,
+      "collect_envs": 256,
+      "collect_steps": 2000,
+      "collect_eps": 0.1,
+      "K": 16,
+      "H": 8,
+      "d": 128,
+      "gate_coef": 0.01,
+      "wm_batch": 512,
+      "wm_steps": 20000,
+      "wm_lr": 0.0003,
+      "round_int": 1,
+      "imag_len": 256,
+      "p_none": 0.1,
+      "p_freeze": 0.3,
+      "p_scale": 0.15,
+      "p_walk": 0.15,
+      "freeze_switch_p": 0.1,
+      "num_imag_envs": 2048,
+      "ppo_T": 128,
+      "ppo_updates": 400,
+      "ppo_epochs": 4,
+      "ppo_minibatches": 8,
+      "ppo_lr": 0.0003,
+      "gamma": 0.99,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "eval_games": 32,
+      "eval_max_steps": 10000
+     },
+     "experiment": null,
+     "selected": {
+      "round": 4,
+      "greedy": true,
+      "pong_score_diff": 17.09375
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "val_loss": 1.2751423120498657,
+       "pong_sample": 4.71875,
+       "pong_greedy": 6.28125,
+       "transitions": 512000
+      },
+      {
+       "round": 1,
+       "val_loss": 1.7047134637832642,
+       "pong_sample": 7.625,
+       "pong_greedy": 7.625,
+       "transitions": 1024000
+      },
+      {
+       "round": 2,
+       "val_loss": 1.4599385261535645,
+       "pong_sample": 13.625,
+       "pong_greedy": 15.90625,
+       "transitions": 1536000
+      },
+      {
+       "round": 3,
+       "val_loss": 1.5388755798339844,
+       "pong_sample": 12.65625,
+       "pong_greedy": 14.125,
+       "transitions": 2048000
+      },
+      {
+       "round": 4,
+       "val_loss": 1.36497163772583,
+       "pong_sample": 16.0,
+       "pong_greedy": 17.09375,
+       "transitions": 2560000
+      }
+     ],
+     "rounds_total": 5,
+     "kind": "full",
+     "evals": [
+      {
+       "file": "runs/oi_p01_s1/robust/lazy_enemy_eval.json",
+       "ckpt": "runs/oi_p01_s1/robust/best.pkl",
+       "round": null,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "pong_player": 20.34375,
+       "pong_enemy": 3.3125,
+       "pong_final": 17.03125,
+       "lazy_player": 21.0,
+       "lazy_enemy": 4.15625,
+       "lazy_final": 16.84375,
+       "lazy_won": 32,
+       "rmse_ball_h1": [
+        1.701177716255188,
+        3.7438502311706543
+       ],
+       "rmse_enemy_h1": [
+        0.8360693454742432,
+        6.862906455993652
+       ],
+       "mtime": 1790674903.8955367
+      }
+     ],
+     "process": [],
+     "running": false,
+     "checkpoint": {
+      "path": "runs/oi_p01_s1/round4.pkl",
+      "label": "round 4 (latest)"
+     }
+    }
+   ],
+   "status": "goal_met",
+   "updated": 1790674903.8955367,
+   "video": {
+    "src": "media/experiment_observation_interventions.mp4",
+    "ckpt": "runs/oi_p01_s0/round4.pkl",
+    "ckpt_mtime": 1790674553.4333274,
+    "run": "oi_p01_s0",
+    "label": "round 4 (latest)",
+    "rendered": 1790674877.8216472,
+    "steps": 450,
+    "fps": 15,
+    "greedy": false,
+    "has_actor": true,
+    "imagined_points": {
+     "agent": 10,
+     "enemy": 0
+    }
+   }
+  }
+ ],
+ "unassigned": []
+}

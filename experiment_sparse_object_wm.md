@@ -3,6 +3,10 @@
 Code: `experiment_sparse_object_wm.py` (training), `evaluate_lazy_enemy.py` (held-out evaluation),
 `common.py` (OC env pipeline, data collection, evaluation).
 
+## Summary
+
+A per-object world model whose objects exchange messages through sigmoid gates (L1 penalty), recomputed at every step, trained on unmodified Pong. A PPO actor is trained purely inside it over 5 Dreamer-style rounds. It wins Pong 21 : 2 but loses with `lazy_enemy` (final score -8.4), and the ball's prediction uses the enemy as a shortcut.
+
 ## Goal
 
 Train an actor **entirely inside a learned world model**, where the world model is fitted only to

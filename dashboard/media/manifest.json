@@ -1,0 +1,92 @@
+{
+ "experiment_sparse_object_wm": {
+  "ckpt": "runs/sow_v1/round4.pkl",
+  "ckpt_mtime": 1790614577.3955734,
+  "run": "sow_v1",
+  "label": "round 4 (latest)",
+  "rendered": 1790674850.0009434,
+  "steps": 450,
+  "fps": 15,
+  "greedy": false,
+  "has_actor": true,
+  "imagined_points": {
+   "agent": 6,
+   "enemy": 0
+  }
+ },
+ "experiment_intervention_actor": {
+  "ckpt": "runs/ia_v1/round4.pkl",
+  "ckpt_mtime": 1790669280.4055676,
+  "run": "ia_v1",
+  "label": "round 4 (latest)",
+  "rendered": 1790674855.4497178,
+  "steps": 450,
+  "fps": 15,
+  "greedy": false,
+  "has_actor": true,
+  "imagined_points": {
+   "agent": 8,
+   "enemy": 0
+  }
+ },
+ "experiment_gated_actor": {
+  "ckpt": "runs/ga_v3/round4.pkl",
+  "ckpt_mtime": 1790670337.1916447,
+  "run": "ga_v3",
+  "label": "round 4 (latest)",
+  "rendered": 1790674861.3794274,
+  "steps": 450,
+  "fps": 15,
+  "greedy": false,
+  "has_actor": true,
+  "imagined_points": {
+   "agent": 14,
+   "enemy": 0
+  }
+ },
+ "experiment_receiver_gates": {
+  "ckpt": "runs/rg_wmonly/wm_only.pkl",
+  "ckpt_mtime": 1790668647.2947624,
+  "run": "rg_wmonly",
+  "label": "world model only",
+  "rendered": 1790674866.6304624,
+  "steps": 450,
+  "fps": 15,
+  "greedy": false,
+  "has_actor": false,
+  "imagined_points": {
+   "agent": 1,
+   "enemy": 27
+  }
+ },
+ "experiment_receiver_soft_gates": {
+  "ckpt": "runs/rste_wmonly_g0.02/wm_only.pkl",
+  "ckpt_mtime": 1790671109.815973,
+  "run": "rste_wmonly_g0.02",
+  "label": "world model only",
+  "rendered": 1790674872.0622275,
+  "steps": 450,
+  "fps": 15,
+  "greedy": false,
+  "has_actor": false,
+  "imagined_points": {
+   "agent": 1,
+   "enemy": 9
+  }
+ },
+ "experiment_observation_interventions": {
+  "ckpt": "runs/oi_p01_s0/round4.pkl",
+  "ckpt_mtime": 1790674553.4333274,
+  "run": "oi_p01_s0",
+  "label": "round 4 (latest)",
+  "rendered": 1790674877.8216472,
+  "steps": 450,
+  "fps": 15,
+  "greedy": false,
+  "has_actor": true,
+  "imagined_points": {
+   "agent": 10,
+   "enemy": 0
+  }
+ }
+}

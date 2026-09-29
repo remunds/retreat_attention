@@ -3,6 +3,10 @@
 Code: `experiment_receiver_soft_gates.py` (full pipeline of `experiment_intervention_actor.py` with
 a different world model), diagnostic `ablation_ball_enemy.py`.
 
+## Summary
+
+Receiver-driven soft (sigmoid + L1) and binary straight-through gates, plus an ablation of how much the ball's prediction needs the enemy. No variant closed ball <- enemy in free flight, although removing it entirely costs little accuracy.
+
 ## Goal
 
 Make the world model object-contained (the ball ignores the enemy except near a bounce), as a

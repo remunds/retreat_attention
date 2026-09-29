@@ -3,6 +3,10 @@
 Code: `experiment_intervention_actor.py` (reuses PPO, data collection and rounds from
 `experiment_sparse_object_wm.py`), evaluation with `evaluate_lazy_enemy.py`.
 
+## Summary
+
+Hard-concrete (L0) gates in the world model, and an actor trained in imagination under random interventions on the enemy's dynamics (freeze, scaled motion, random walk). The `lazy_enemy` final score rose to +0.2, but the ball kept every gate open, so the enemy interventions also distorted the imagined ball.
+
 ## Goal
 
 Reach a **final score (agent points minus enemy points) of at least +10** with `lazy_enemy`, using

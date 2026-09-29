@@ -1,0 +1,392 @@
+<title>Retreat Attention Experiments</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: lab-board header (goal + score rail) over a responsive grid of experiment cards, one card per experiment file. */
+:root {
+  --bg: #f3f4f6; --surface: #ffffff; --sunken: #eceef2; --ink: #15171c; --ink-2: #454a55; --muted: #737a87;
+  --line: #dde0e6; --accent: #2456a6; --accent-wash: #e3ebf8;
+  --player: #3b8f3b; --enemy: #c4632a; --target: #1f8a4c; --target-wash: #e1f2e8;
+  --good: #1f8a4c; --good-wash: #e1f2e8; --warn: #a86a12; --warn-wash: #f8ecd6; --run: #2456a6; --run-wash: #e3ebf8;
+  --neutral: #5d6470; --neutral-wash: #eceef2;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101216; --surface: #171a20; --sunken: #1e2229; --ink: #eceef2; --ink-2: #b9bec9; --muted: #8b919d;
+  --line: #2a2f38; --accent: #7fa8ee; --accent-wash: #1d2a40;
+  --player: #6cc46c; --enemy: #e38a52; --target: #4cc27f; --target-wash: #16301f;
+  --good: #4cc27f; --good-wash: #16301f; --warn: #e2a94c; --warn-wash: #33260f; --run: #7fa8ee; --run-wash: #1d2a40;
+  --neutral: #a3a9b5; --neutral-wash: #232730; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #101216; --surface: #171a20; --sunken: #1e2229; --ink: #eceef2; --ink-2: #b9bec9; --muted: #8b919d;
+  --line: #2a2f38; --accent: #7fa8ee; --accent-wash: #1d2a40;
+  --player: #6cc46c; --enemy: #e38a52; --target: #4cc27f; --target-wash: #16301f;
+  --good: #4cc27f; --good-wash: #16301f; --warn: #e2a94c; --warn-wash: #33260f; --run: #7fa8ee; --run-wash: #1d2a40;
+  --neutral: #a3a9b5; --neutral-wash: #232730; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--f-body); }
+.wrap { max-width: 1680px; margin: 0 auto; padding-inline: 24px; padding-block: 28px 48px; display: grid; gap: 24px; }
+@media (max-width: 560px) { .wrap { padding-inline: 16px; } }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: 0.005em; }
+code, .mono { font-family: var(--f-mono); font-size: 0.92em; }
+.eyebrow { font: 500 11px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* header */
+header.board { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px 40px; align-items: end;
+  padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+@media (max-width: 900px) { header.board { grid-template-columns: 1fr; } }
+header.board h1 { font-size: 34px; line-height: 1.1; margin-top: 8px; }
+header.board p { margin: 10px 0 0; color: var(--ink-2); max-width: 68ch; }
+.meta { font: 400 12px/1.4 var(--f-mono); color: var(--muted); margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.goalbox { display: grid; gap: 8px; }
+.goalbox .big { font: 600 44px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.goalbox .row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.goalbox .sub { color: var(--ink-2); font-size: 13px; }
+
+/* toolbar */
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { font: 500 12px/1 var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+  padding: 7px 12px; border-radius: 999px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip .n { font-family: var(--f-mono); opacity: 0.7; }
+.toolbar .spacer { flex: 1; }
+
+/* grid + cards */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); gap: 20px; align-items: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 16px; min-width: 0; }
+.card.is-goal_met { border-color: var(--good); box-shadow: 0 0 0 1px var(--good) inset; }
+.card-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; }
+.card-head h2 { font-size: 21px; line-height: 1.2; grid-column: 1 / -1; }
+.files { font: 400 12px/1.4 var(--f-mono); color: var(--muted); grid-column: 1 / -1; overflow-wrap: anywhere; }
+.pill { font: 600 11px/1 var(--f-body); letter-spacing: 0.04em; text-transform: uppercase; padding: 5px 9px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.goal_met { color: var(--good); background: var(--good-wash); }
+.pill.running { color: var(--run); background: var(--run-wash); }
+.pill.running::before { animation: pulse 1.6s ease-in-out infinite; }
+.pill.evaluated { color: var(--warn); background: var(--warn-wash); }
+.pill.trained, .pill.wm_only, .pill.no_runs { color: var(--neutral); background: var(--neutral-wash); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .pill.running::before { animation: none; } }
+.summary { margin: 0; color: var(--ink); }
+.rq { background: var(--sunken); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; min-width: 0; }
+.md { color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol { margin: 0 0 8px; }
+.md ul, .md ol { padding-left: 20px; }
+.md table { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.md th, .md td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md pre { background: var(--sunken); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+.md h3 { font-size: 15px; margin: 14px 0 6px; color: var(--ink); }
+.tablewrap { overflow-x: auto; max-width: 100%; }
+
+.video { display: grid; gap: 6px; }
+.video video { width: 100%; max-width: 100%; aspect-ratio: 640 / 464; background: #181a1e; border-radius: 6px; display: block; }
+.caption { font: 400 12px/1.4 var(--f-mono); color: var(--muted); overflow-wrap: anywhere; }
+.novideo { aspect-ratio: 640 / 464; max-width: 100%; border: 1px dashed var(--line); border-radius: 6px; display: grid; place-items: center;
+  color: var(--muted); font-size: 13px; text-align: center; padding: 16px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.tile { background: var(--surface); padding: 10px 12px; display: grid; gap: 4px; align-content: start; }
+.tile .v { font: 600 22px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.tile .v.good { color: var(--good); }
+.tile .s { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.rail { display: grid; gap: 4px; }
+.rail svg, .spark svg { width: 100%; height: auto; display: block; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+.spark { position: relative; display: grid; gap: 4px; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font: 400 12px/1.4 var(--f-mono);
+  padding: 6px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); z-index: 2; }
+
+table.runs { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+table.runs th { text-align: left; font: 500 11px/1 var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.runs td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.runs td.num { font-family: var(--f-mono); white-space: nowrap; }
+table.runs .runname { font-family: var(--f-mono); }
+.pos { color: var(--good); } .neg { color: var(--ink-2); }
+details { border-top: 1px solid var(--line); padding-top: 10px; }
+details summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details .md { margin-top: 10px; display: grid; gap: 10px; }
+.sechead { font: 600 13px/1.2 var(--f-display); color: var(--ink); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px; }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 6px; }
+footer code { background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
+.empty { color: var(--muted); padding: 40px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; }
+</style>
+
+<div class="wrap">
+  <header class="board">
+    <div>
+      <div class="eyebrow">Object-centric Pong world model · JAXAtari</div>
+      <h1>Retreat Attention experiments</h1>
+      <p>Every experiment trains a world model and an actor on unmodified Pong only. The held-out test is the
+        <code>lazy_enemy</code> mod, where the enemy paddle only follows the ball while the ball moves towards it.
+        The goal is a final score (agent points minus enemy points) of at least +10 there, averaged over at least 10 games.</p>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="goalbox" id="goalbox"></div>
+  </header>
+  <div class="toolbar" id="toolbar" role="group" aria-label="Filter experiments by status"></div>
+  <main class="grid" id="grid"></main>
+  <section id="unassigned"></section>
+  <footer>
+    <div>Built by <code>dashboard/build_dashboard.py</code> from the experiment files, their Markdown notes and <code>runs/</code>.
+      To add an experiment, create <code>experiment_x.py</code> with <code>experiment_x.md</code> and rebuild:
+      <code>CUDA_VISIBLE_DEVICES= uv run dashboard/build_dashboard.py</code>.</div>
+    <div>Videos: the newest checkpoint of each experiment's most recent run, played inside its own world model (imagination), started from real Pong histories. Lines connect each object to the objects its next-step prediction uses; opacity is the gate value.</div>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+const DATA = /*__DATA__*/null;
+const STATUS = {
+  goal_met: "Goal met", running: "Running", evaluated: "Evaluated, below goal", trained: "Trained, not evaluated",
+  wm_only: "World model only", no_runs: "No runs yet",
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const md = s => {
+  if (!s) return "";
+  try { return window.marked ? marked.parse(s) : `<p>${esc(s)}</p>`; } catch (e) { return `<p>${esc(s)}</p>`; }
+};
+const mdInline = s => {
+  if (!s) return "";
+  try { return window.marked ? marked.parseInline(s) : esc(s); } catch (e) { return esc(s); }
+};
+const sgn = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(2);
+const fmt = (v, d = 2) => v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(d);
+const ago = t => {
+  const s = DATA.generated - t;
+  if (s < 90) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400 * 2) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+};
+
+// Score rail: final score on Pong's own scale, -21 (lost 0:21) .. +21 (won 21:0), with the +10 goal zone.
+function rail(points, opts = {}) {
+  const W = 320, H = opts.big ? 58 : 50, x0 = 10, x1 = W - 10, y = opts.big ? 30 : 26;
+  const X = v => x0 + (Math.max(-21, Math.min(21, v)) + 21) / 42 * (x1 - x0);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || "final scores")}">`;
+  s += `<rect x="${X(DATA.target)}" y="${y - 9}" width="${X(21) - X(DATA.target)}" height="18" fill="var(--target-wash)"/>`;
+  s += `<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="2"/>`;
+  for (const t of [-21, -10, 0, 10, 21]) {
+    s += `<line x1="${X(t)}" x2="${X(t)}" y1="${y - 5}" y2="${y + 5}" stroke="${t === DATA.target ? "var(--target)" : "var(--muted)"}" stroke-width="${t === DATA.target ? 2 : 1}"/>`;
+    s += `<text x="${X(t)}" y="${y + 19}" text-anchor="middle" font-size="10" font-family="var(--f-mono)" fill="${t === DATA.target ? "var(--target)" : "var(--muted)"}">${t > 0 ? "+" + t : t}${t === DATA.target ? " goal" : ""}</text>`;
+  }
+  const placed = [];
+  for (const p of points) {
+    if (p.v == null) continue;
+    const cx = X(p.v);
+    const clash = placed.some(q => Math.abs(q - cx) < 44);
+    placed.push(cx);
+    const ly = clash ? y + 0 : y - 12;
+    if (p.shape === "diamond")
+      s += `<path d="M${cx} ${y - 6} L${cx + 6} ${y} L${cx} ${y + 6} L${cx - 6} ${y} Z" fill="${p.color}" stroke="var(--surface)" stroke-width="2"><title>${esc(p.name)}: ${sgn(p.v)}</title></path>`;
+    else
+      s += `<circle cx="${cx}" cy="${y}" r="5" fill="${p.color}" stroke="var(--surface)" stroke-width="2"><title>${esc(p.name)}: ${sgn(p.v)}</title></circle>`;
+    if (!clash) s += `<text x="${cx}" y="${ly}" text-anchor="middle" font-size="11" font-weight="600" font-family="var(--f-mono)" fill="var(--ink)">${sgn(p.v)}</text>`;
+  }
+  return s + `</svg>`;
+}
+
+// Sparkline of the real-Pong final score per training round (the better of greedy / sampled actions).
+function spark(run, id) {
+  const R = run.rounds.filter(r => r.pong_sample != null || r.pong_greedy != null);
+  if (R.length < 1) return "";
+  const W = 320, H = 92, l = 30, r = 36, t = 10, b = 20;
+  const vals = R.map(q => Math.max(q.pong_sample ?? -99, q.pong_greedy ?? -99));
+  const n = Math.max(R.length, run.rounds_total || R.length);
+  const X = i => n <= 1 ? (l + W - r) / 2 : l + i / (n - 1) * (W - l - r);
+  const Y = v => t + (21 - v) / 42 * (H - t - b);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Unmodified Pong final score per round, run ${esc(run.name)}">`;
+  for (const g of [-21, 0, 21]) {
+    s += `<line x1="${l}" x2="${W - r}" y1="${Y(g)}" y2="${Y(g)}" stroke="var(--line)" stroke-width="1"/>`;
+    s += `<text x="${l - 6}" y="${Y(g) + 3.5}" text-anchor="end" font-size="10" font-family="var(--f-mono)" fill="var(--muted)">${g > 0 ? "+" + g : g}</text>`;
+  }
+  for (let i = 0; i < n; i++) s += `<text x="${X(i)}" y="${H - 4}" text-anchor="middle" font-size="10" font-family="var(--f-mono)" fill="var(--muted)">r${i}</text>`;
+  const pts = vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ");
+  if (vals.length > 1) {
+    s += `<polygon points="${X(0)},${Y(-21)} ${pts} ${X(vals.length - 1)},${Y(-21)}" fill="var(--player)" opacity="0.1"/>`;
+    s += `<polyline points="${pts}" fill="none" stroke="var(--player)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  const li = vals.length - 1;
+  s += `<circle cx="${X(li)}" cy="${Y(vals[li])}" r="4" fill="var(--player)" stroke="var(--surface)" stroke-width="2"/>`;
+  s += `<text x="${X(li) + 8}" y="${Y(vals[li]) + 4}" font-size="11" font-weight="600" font-family="var(--f-mono)" fill="var(--ink)">${sgn(vals[li]).replace(".00", "")}</text>`;
+  s += `<rect class="hit" x="${l - 10}" y="0" width="${W - l - r + 20}" height="${H}" fill="transparent"/>`;
+  s += `</svg>`;
+  return `<div class="spark" id="${id}" data-run="${esc(run.name)}">
+    <div class="eyebrow">Unmodified Pong final score per round · ${esc(run.name)}</div>${s}<div class="tip" hidden></div></div>`;
+}
+
+function wireSpark(el, run) {
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+  const R = run.rounds;
+  const n = Math.max(R.length, run.rounds_total || R.length);
+  const move = ev => {
+    const box = svg.getBoundingClientRect();
+    const fx = (ev.clientX - box.left) / box.width * 320;
+    const i = Math.max(0, Math.min(R.length - 1, Math.round((fx - 30) / (320 - 66) * (n - 1))));
+    const q = R[i];
+    if (!q) return;
+    tip.hidden = false;
+    tip.innerHTML = `round ${q.round}<br>sampled ${sgn(q.pong_sample)} · greedy ${sgn(q.pong_greedy)}<br>WM val loss ${fmt(q.val_loss, 3)}`;
+    const px = (n <= 1 ? 0.5 : (30 + i / (n - 1) * (320 - 66)) / 320) * box.width;
+    tip.style.left = `${Math.max(90, Math.min(box.width - 90, px))}px`;
+    tip.style.top = `${svg.offsetTop + 10}px`;
+  };
+  svg.addEventListener("mousemove", move);
+  svg.addEventListener("mouseleave", () => { tip.hidden = true; });
+}
+
+function latestEval(e) {
+  const ev = e.runs.flatMap(r => r.evals.map(v => ({...v, run: r.name})));
+  ev.sort((a, b) => a.mtime - b.mtime);
+  return ev[ev.length - 1];
+}
+
+function tilesFor(e) {
+  const ev = latestEval(e);
+  const full = e.runs.filter(r => r.kind === "full" && r.rounds.length);
+  const lastFull = full[full.length - 1];
+  const wmo = e.runs.filter(r => r.wm_only);
+  const T = [];
+  if (ev) {
+    T.push([`<span class="${ev.lazy_final >= DATA.target ? "good" : ""}">${sgn(ev.lazy_final)}</span>`, "lazy_enemy final",
+      `${fmt(ev.lazy_player)} : ${fmt(ev.lazy_enemy)} · won ${ev.lazy_won}/${ev.games}`]);
+    T.push([sgn(ev.pong_final), "Pong final", `${fmt(ev.pong_player)} : ${fmt(ev.pong_enemy)}`]);
+    if (ev.rmse_ball_h1[0] != null) T.push([`${fmt(ev.rmse_ball_h1[0], 1)} → ${fmt(ev.rmse_ball_h1[1], 1)}`, "ball RMSE, 1 step", "px, Pong → lazy_enemy"]);
+  }
+  if (lastFull) {
+    const q = lastFull.rounds[lastFull.rounds.length - 1];
+    T.push([fmt(q.val_loss, 3), "WM val loss", `${lastFull.name}, round ${q.round}`]);
+  }
+  if (!ev && wmo.length) {
+    const w = wmo[wmo.length - 1];
+    T.push([fmt(w.wm_only.val_loss, 3), "WM val loss", w.name]);
+    if (w.wm_only.mse_ball != null) T.push([fmt(w.wm_only.mse_ball, 3), "ball MSE, 8 steps", "(8 px)² units"]);
+    const lk = w.wm_only.leakage || {};
+    if (lk["ball<-enemy_far"] != null) T.push([fmt(lk["ball<-enemy_far"], 1), "ball ← enemy leak", "px, far from bounce"]);
+    if (w.wm_only.open_gates != null) T.push([fmt(w.wm_only.open_gates, 2), "open gates", "per receiver"]);
+  }
+  if (!T.length) return "";
+  return `<div class="tiles">${T.map(([v, l, s]) => `<div class="tile"><div class="eyebrow">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("")}</div>`;
+}
+
+function runsTable(e) {
+  if (!e.runs.length) return "";
+  const rows = [...e.runs].reverse().map(r => {
+    const ev = r.evals[r.evals.length - 1];
+    let prog;
+    if (r.running) prog = `<span class="pill running">${esc(r.activity || "running")}</span>`;
+    else if (r.kind === "wm_only") prog = "world model only";
+    else if (r.kind === "full") prog = `${r.rounds.length}/${r.rounds_total ?? "?"} rounds`;
+    else prog = "started";
+    const best = r.rounds.length ? Math.max(...r.rounds.map(q => Math.max(q.pong_sample ?? -99, q.pong_greedy ?? -99))) : null;
+    const pong = ev ? ev.pong_final : best;
+    return `<tr><td class="runname">${esc(r.name)}</td><td>${prog}</td>
+      <td class="num">${sgn(pong)}</td>
+      <td class="num ${ev && ev.lazy_final >= DATA.target ? "pos" : ""}">${ev ? sgn(ev.lazy_final) + (r.evals.length > 1 ? ` <span title="${r.evals.length} evaluations, latest shown">(${r.evals.length})</span>` : "") : "–"}</td>
+      <td class="num">${ago(r.mtime)}</td></tr>`;
+  }).join("");
+  return `<div class="tablewrap"><table class="runs"><thead><tr><th>Run</th><th>Progress</th><th>Pong</th><th>lazy_enemy</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function videoBlock(e) {
+  const v = e.video;
+  if (!v || v.error) return `<div class="novideo">${v && v.error ? "Video could not be rendered: " + esc(v.error) : "No checkpoint yet, so no world-model video."}</div>`;
+  const pts = v.imagined_points ? ` · imagined points ${v.imagined_points.agent} : ${v.imagined_points.enemy}` : "";
+  return `<div class="video"><video src="${esc(v.src)}" muted loop autoplay playsinline controls preload="metadata"></video>
+    <div class="caption">${esc(v.run)} · ${esc(v.label)} · ${v.has_actor ? (v.greedy ? "greedy actor" : "sampling actor") : "random actions"}${pts}</div></div>`;
+}
+
+function card(e) {
+  const ev = latestEval(e);
+  const full = e.runs.filter(r => r.kind === "full" && r.rounds.length);
+  const lastFull = full[full.length - 1];
+  const railBlock = ev ? `<div class="rail"><div class="eyebrow">Final score, ${esc(ev.run)} (${ev.games} games each)</div>
+      ${rail([{v: ev.pong_final, name: "Unmodified Pong", color: "var(--player)"}, {v: ev.lazy_final, name: "lazy_enemy (held out)", color: "var(--enemy)", shape: "diamond"}], {label: "final scores"})}
+      <div class="legend"><span><i style="background:var(--player);border-radius:50%"></i>Unmodified Pong</span><span><i style="background:var(--enemy);transform:rotate(45deg) scale(.8)"></i>lazy_enemy (held out)</span></div></div>` : "";
+  const details = [["Goal", e.goal], ["Setup", e.setup], ["Results", e.results]].filter(([, v]) => v)
+    .map(([h, v]) => `<div class="sechead">${h}</div><div>${md(v)}</div>`).join("");
+  return `<article class="card is-${e.status}" data-status="${e.status}" id="${esc(e.module)}">
+    <div class="card-head">
+      <div class="eyebrow">${e.number != null ? "Experiment " + e.number : "Experiment"} · updated ${ago(e.updated)}</div>
+      <span class="pill ${e.status}">${STATUS[e.status] || e.status}</span>
+      <h2>${esc(e.title.replace(/^Experiment \d+:\s*/, ""))}</h2>
+      <div class="files">${esc(e.py)}${e.md ? " · " + esc(e.md) : " · no Markdown notes yet"}</div>
+    </div>
+    ${e.summary ? `<div class="summary md">${md(e.summary)}</div>` : ""}
+    ${e.question ? `<div class="rq"><div class="eyebrow">Research question</div><div class="md">${md(e.question)}</div></div>` : ""}
+    ${videoBlock(e)}
+    ${railBlock}
+    ${tilesFor(e)}
+    ${lastFull ? spark(lastFull, "spark-" + e.module) : ""}
+    ${runsTable(e)}
+    ${details ? `<details><summary>Goal, setup and full results</summary><div class="md">${details}</div></details>` : ""}
+  </article>`;
+}
+
+function render() {
+  const E = DATA.experiments;
+  document.getElementById("meta").innerHTML =
+    `<span>Built ${esc(DATA.generated_iso.replace("T", " "))}</span>${DATA.git ? `<span>git ${esc(DATA.git)}</span>` : ""}<span>${E.length} experiments · ${E.reduce((a, e) => a + e.runs.length, 0)} runs</span>`;
+  const evals = E.flatMap(e => e.runs.flatMap(r => r.evals.map(v => ({...v, run: r.name, exp: e}))));
+  evals.sort((a, b) => b.lazy_final - a.lazy_final);
+  const best = evals[0];
+  document.getElementById("goalbox").innerHTML = best ? `
+    <div class="eyebrow">Best held-out lazy_enemy final score so far</div>
+    <div class="row"><span class="big" style="color:${best.lazy_final >= DATA.target ? "var(--good)" : "var(--ink)"}">${sgn(best.lazy_final)}</span>
+      <span class="sub">${esc(best.run)} · experiment ${best.exp.number ?? "?"} · ${fmt(best.lazy_player)} : ${fmt(best.lazy_enemy)} · won ${best.lazy_won}/${best.games} games</span></div>
+    ${rail(evals.map(v => ({v: v.lazy_final, name: `${v.run} (exp. ${v.exp.number ?? "?"})`, color: v === best ? "var(--enemy)" : "var(--muted)", shape: "diamond"})).reverse(), {big: true, label: "held-out final scores of all evaluated runs"})}
+    <div class="sub">Each diamond is one evaluated run on lazy_enemy. The shaded zone is the goal (+10 or more).</div>` :
+    `<div class="eyebrow">No held-out evaluation yet</div>`;
+
+  const counts = {};
+  E.forEach(e => { counts[e.status] = (counts[e.status] || 0) + 1; });
+  const order = ["goal_met", "running", "evaluated", "trained", "wm_only", "no_runs"].filter(k => counts[k]);
+  let active = "all";
+  try { active = localStorage.getItem("dash-filter") || "all"; } catch (e) {}
+  if (active !== "all" && !counts[active]) active = "all";
+  const tb = document.getElementById("toolbar");
+  tb.innerHTML = [`<button class="chip" id="f-all" data-f="all">All <span class="n">${E.length}</span></button>`]
+    .concat(order.map(k => `<button class="chip" id="f-${k}" data-f="${k}">${STATUS[k]} <span class="n">${counts[k]}</span></button>`)).join("");
+  const apply = () => {
+    tb.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c.dataset.f === active)));
+    document.querySelectorAll(".card").forEach(c => { c.hidden = active !== "all" && c.dataset.status !== active; });
+  };
+  tb.addEventListener("click", ev => {
+    const c = ev.target.closest(".chip");
+    if (!c) return;
+    active = c.dataset.f;
+    try { localStorage.setItem("dash-filter", active); } catch (e) {}
+    apply();
+  });
+
+  const grid = document.getElementById("grid");
+  grid.innerHTML = E.length ? E.map(card).join("") : `<div class="empty">No experiments found. Add experiment_x.py and experiment_x.md to the repo root.</div>`;
+  E.forEach(e => {
+    const full = e.runs.filter(r => r.kind === "full" && r.rounds.length);
+    const el = document.getElementById("spark-" + e.module);
+    if (el) wireSpark(el, full[full.length - 1]);
+  });
+  apply();
+
+  const U = DATA.unassigned || [];
+  document.getElementById("unassigned").innerHTML = U.length ? `<div class="card"><h2 style="font-size:18px">Runs without an experiment</h2>
+    <p class="md">These run directories matched no experiment file. Name them in the experiment's Markdown commands (<code>--name &lt;run&gt;</code>) or add <code>"experiment"</code> to their config.</p>
+    ${runsTable({runs: U})}</div>` : "";
+}
+
+render();
+</script>

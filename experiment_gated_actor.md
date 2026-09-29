@@ -3,6 +3,10 @@
 Code: `experiment_gated_actor.py` (world model, data collection, imagination and rounds from
 `experiment_sparse_object_wm.py`), evaluation with `evaluate_lazy_enemy.py`.
 
+## Summary
+
+Experiment 1's world model with an actor that gates its object inputs (ball, enemy) per step with hard-concrete gates and an expected-L0 penalty. The gates stayed open because the enemy is useful in unmodified Pong; `lazy_enemy` final score -4.9.
+
 ## Goal
 
 Reach a **final score of at least +10** with `lazy_enemy` with an actor trained only in a world
