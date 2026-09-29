@@ -305,10 +305,40 @@ Exact bounce timing:
 
 **But the direction is mixed, not cleanly correct.** At real *enemy*-bounce moments, "enemy" choice frequency roughly doubles (16% → 31%) — plausible, in the right direction. At real *player*-bounce moments, "player" choice frequency goes the **wrong way**, dropping slightly (78% → 71%) while "enemy" rises (16% → 28%) — exactly backwards from what a genuine dependency should do. So hard gating broke the "identical everywhere" pattern that characterized every prior approach, which is real progress toward the kind of per-step-varying, inspectable dependency `project.md` asks for — but it hasn't (yet, at 50 epochs) landed on the *correct* rule for the player side specifically, only the enemy side. Plausibly because the enemy's true dependency (`direction = sign(ball_y - enemy_y)`) is a clean, deterministic rule to discover, while the player's bounce timing is entangled with the `epsilon_track_ball` policy's own stochastic exploration, making a clean discrete rule harder to find in the same number of epochs.
 
+## Pushing hard gating further: 150 epochs
+
+Re-ran the same three predictors for 150 epochs instead of 50 (same schedule, just stretched — temperature still anneals 2.0→0.1, just more gradually).
+
+**Player and enemy both moved toward their plausibly-correct dependency with more training** — a genuinely encouraging sign:
+
+| target | @ 50 epochs | @ 150 epochs |
+|---|---|---|
+| player | ball=0.90 (MSE 2.81) | action=0.53, null=0.26, ball=0.19 (MSE 0.67) |
+| enemy | player=0.55 (MSE 2.07) | ball=0.46, player=0.11 (MSE 1.06) |
+
+Player's real dependency is its own action (that's what actually moves the paddle); enemy's real dependency is the ball (`direction = sign(ball_y - enemy_y)`). Both predictors drifted *away* from an initially-dominant, plausibly-spurious candidate and *toward* the game-logic-correct one as training continued, with MSE dropping sharply alongside (2.81→0.67, 2.07→1.06) — real evidence that hard gating can, with enough time, find the right dependency instead of just any confident one.
+
+**But ball's court-position/bounce-timing pattern got worse, not better, with more training — a sobering result that reframes the earlier "real progress" finding.**
+
+```
+Court position, 50 -> 150 epochs:
+  near enemy  : player=0.82 -> 0.88
+  mid-court   : player=0.81 -> 0.85
+  near player : player=0.59 -> 0.82   (was the most-varied bucket; now nearly as high as the rest)
+
+Bounce timing, 50 -> 150 epochs:
+  player-bounce: player=0.71 -> 0.64 | elsewhere: 0.78 -> 0.85   (wrong-direction gap: -0.07 -> -0.21, THREE TIMES LARGER)
+  enemy-bounce : enemy=0.31 -> 0.14  | elsewhere: 0.16 -> 0.07   (still ~2x at bounce vs elsewhere, ratio preserved)
+```
+
+More training didn't refine ball's court-position variation toward the correct localized rule — it **flattened it back out**, converging to a more confident, more globally-uniform reliance on "player" (0.82-0.88 everywhere, versus the more varied 0.59-0.88 spread at 50 epochs). And the *wrong-direction* dip at real player-bounces got substantially larger, not smaller. This suggests the earlier "context-varying attention" reading of the 50-epoch snapshot was likely an artifact of **incomplete convergence** rather than a sign of correctly-in-progress learning — letting it run longer reveals the actual endpoint is a strong, confident, *still-wrong* global habit, matching the concern already raised: Gumbel-softmax choices can get stuck once the temperature anneal narrows things down, amplifying whatever pattern (right or wrong) it locked onto early rather than self-correcting.
+
+**Net read**: hard gating looks genuinely promising for player and enemy (both objects with a single, clean, deterministic true dependency), but not yet for ball, whose real dependency is switching between two candidates conditionally rather than settling on one fixed winner — exactly the harder case the whole "per-timestep dependency" idea was designed for, and exactly where it's still failing.
+
 ## Next steps
-- **Given hard gating is the first approach to show real, context-varying attention, it's worth pushing further rather than abandoning**: more epochs (ball's MSE was still dropping at epoch 50: 7.6 → 3.26, unlike the soft variants which plateaued), and re-running both diagnostics on the player/enemy predictors' own hard-gated results too (not just ball's) to see if the same partial-correctness pattern shows up elsewhere.
-- Investigate why the *enemy*-bounce direction came out plausible while the *player*-bounce direction came out inverted — is it really the exploration-noise explanation above, or something else (e.g. an artifact of which candidate the gate happened to lock onto early, given Gumbel-softmax choices can still get stuck once a temperature anneal narrows things down)?
-- **Actually wiring up `lazy_enemy` (or an analogous "lazy player" mod) is now the more informative test than ever, and complements the bounce-timed check rather than repeating it**: bounce-timing tells us whether a dependency is *conditionally localized*; intervention tells us whether it's *causally real* even if localized (the enemy's "ball" dependency looks plausibly genuine by both measures so far, worth confirming it survives `lazy_enemy`) — a relocated shortcut should either fail the localization check (as ball's did) or break under intervention even if it passed localization.
+- **The player/enemy improvement suggests the mechanism itself works when there's one right answer to converge to; ball's regression suggests it doesn't yet handle "the right answer changes per step."** Worth trying an anneal schedule that doesn't force full commitment by a fixed epoch count — e.g. only sharpen once validation MSE plateaus, rather than on a fixed schedule, so the model has more room to keep exploring before committing early to whichever candidate happened to look best first.
+- Re-run the full diagnostic suite (court-position, bounce-timing, return-rate) on player's and enemy's own final dependencies too, not just their printed mean-attention numbers, to confirm the "moved toward the correct candidate" reading holds up under the same scrutiny that caught ball's problem.
+- **Actually wiring up `lazy_enemy` (or an analogous "lazy player" mod) is now the more informative test than ever, and complements the bounce-timed check rather than repeating it**: bounce-timing tells us whether a dependency is *conditionally localized*; intervention tells us whether it's *causally real* even if localized (enemy's "ball" dependency looks increasingly genuine by every measure so far, worth confirming it survives `lazy_enemy`) — a relocated shortcut should either fail the localization check (as ball's did) or break under intervention even if it passed localization.
 - Re-run both the `inspect_gate.py` court-position check and `inspect_bounce_attention.py`'s exact-timestep check (plus the return-rate check) on every future variant before trusting any resulting numbers — standing rule, now with three independent confirmations of how necessary it is.
 - Stop annealing temperature once validation MSE stops improving (player's linear-head run got *worse* past its epoch-30 optimum as temperature kept dropping) — an early-stopping or MSE-monitoring criterion on the anneal schedule, rather than a fixed epoch-based one.
 - Average the open-loop rollout evaluation over multiple start points/seeds for both models — the single-window baseline numbers from before are too noisy to trust individually, and the same applies to any future gated-model rollout comparison.
