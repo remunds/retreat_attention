@@ -196,9 +196,39 @@ Attention breakdown for 'ball', WITH the learned distance bias:
 
 `player` attention is still ~0.00–0.02 everywhere, including right next to the player's own paddle. **Why**: the bias term is purely subtractive — at its very best (distance = 0) it contributes nothing, so it can suppress a wrongly-dominant candidate but can never lift a correct one *above* one that's already scoring higher via the ordinary query/key term. Apparently "player" as a candidate for ball's predictor never had a competitive raw query-key score to begin with (plausibly because the strong, always-available `enemy_y` shortcut left little training pressure for the player key/value projection to develop a useful signal at all) — so even a real, correctly-learned distance-suppression rule on the *wrong* candidate can't hand attention back to the *right* one. A weak, purely-suppressive bias — which is what was asked for here, deliberately — isn't sufficient by itself to override an already-dominant wrong candidate; it can trim wrong attention at range, but can't independently promote a correct one that never got a foothold.
 
+## Checking the data itself: does the training rollout even contain a player bounce?
+
+Before pushing further on the gate, checked something more basic: does the random-policy training rollout actually contain enough player-ball bounce events to learn a proximity rule from at all? `world_model/bounce_stats.py` detects two kinds of events directly from the raw ball trajectory (no model involved) — a **bounce** (a sign flip in `ball_vel_x` with no position jump) and a **miss** (the ball resetting to `(BALL_START_X, BALL_START_Y)` after passing a paddle, i.e. a point scored against that side) — and attributes each to whichever paddle's fixed x the ball was nearest to beforehand.
+
+On the same 20k-step rollout used for every gating experiment above:
+
+```
+player:   16 bounces,  113 misses (12.4% return rate, n=129)
+enemy :   22 bounces,    6 misses (78.6% return rate, n=28)
+```
+
+**The player successfully returns the ball only 12.4% of the time it arrives — 16 clean examples in the entire dataset.** The enemy's scripted AI returns it 78.6% of the time. This is a real, structural data-scarcity problem, independent of anything about the gate architecture: there's barely a player-bounce signal in this data for anything to learn, sparse or otherwise.
+
+It also explains the *quality* of what little signal exists. Binning each bounce's contact point (`dy = ball_y - paddle_y`, paddle half-height is 8px):
+
+| dy bin | player (n=16) | enemy (n=22) |
+|---|---|---|
+| -8..-4 | 1 | 0 |
+| -4..0 | 2 | 2 |
+| 0..4 | 4 | **15** |
+| 4..8 | 3 | 0 |
+| 8..12 | 5 | 1 |
+| 12..16 | 0 | 1 |
+| 16..20 | 1 | 1 |
+
+Enemy bounces cluster tightly at dy≈0 (15 of 22, since it actively tracks the ball, so contact is almost always dead-center) — a clean, consistent, easy-to-learn pattern. Player bounces are scattered almost uniformly from -8 to +17 (essentially uncorrelated with anything, since the random policy's paddle position at contact time is close to arbitrary) — even the 16 examples that exist don't share a learnable common structure. **This plausibly explains why "player" never developed a competitive raw query/key score in the ball predictor's gate** (see the distance-bias finding above): it's not just fewer examples, the examples are also individually much less informative.
+
+Visualized alongside the gating results in the [Gating Diagnostics artifact](https://claude.ai/artifact/XyKZhMQoxKCaWZ1LcwPm4L) (return-rate stacked bar + dy-histogram comparison).
+
 ## Next steps
 
-- Given the above, a purely suppressive distance term is structurally limited to reallocating away from things that are far, not toward things that are close, when the close candidate never developed a useful signal to begin with — with the explicit caveat from this session (don't over-bias, distance won't matter the same way in every game) staying in force, worth thinking about what would let the "correct" candidate develop a competitive raw score in the first place, rather than pushing the distance term harder.
+- **The random-policy data collection itself may be the actual blocker**, not the gate. A policy that returns the ball more often (even a simple heuristic "track the ball" player policy, mirroring what the enemy AI already does) would give the player predictor dramatically more — and cleaner — bounce examples to learn from. Worth trying before any further gate-architecture change: retrain on data from a better player policy and see whether "player" becomes a competitive candidate without touching the gate at all.
+- Given the distance-bias finding, a purely suppressive distance term is structurally limited to reallocating away from things that are far, not toward things that are close, when the close candidate never developed a useful signal to begin with — with the explicit caveat from that session (don't over-bias, distance won't matter the same way in every game) staying in force, worth thinking about what would let the "correct" candidate develop a competitive raw score in the first place, rather than pushing the distance term harder. The data-scarcity finding above suggests the answer may simply be "give it better data," not "change the architecture."
 - Re-run the `inspect_gate.py` court-position check after any further change before trusting any resulting numbers — standing rule.
 - Stop annealing temperature once validation MSE stops improving (player's linear-head run got *worse* past its epoch-30 optimum as temperature kept dropping) — an early-stopping or MSE-monitoring criterion on the anneal schedule, rather than a fixed epoch-based one.
 - The real test the confound-check above stands in for is the project's actual success criterion: **run the same court-position-style diagnostic under an actual intervention (e.g. `lazy_enemy`)** rather than only checking correlation with static position. A dependency that's genuinely about paddle proximity should degrade gracefully under `lazy_enemy`; a confounded one (like the current `ball → enemy` shortcut) should break, since `enemy_y` would no longer track the ball the same way. This is the first point where actually wiring up the `lazy_enemy` mod and re-evaluating would answer something we can't get from validation MSE alone.
