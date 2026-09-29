@@ -252,8 +252,25 @@ Still flat, still ~0.85–0.95 everywhere — including right next to the *enemy
 
 One interesting side effect, worth noting rather than chasing further right now: the enemy predictor's attention on "ball" (0.47, entropy dropped to 0.047) is now plausibly *correct*, not a shortcut — the enemy AI's own logic genuinely is `direction = sign(ball_y - enemy_y)`, so "enemy depends on ball" is the real mechanism, not a confound. Distinguishing a genuinely-improved dependency from a relocated confound is exactly why the court-position (or, better, an actual intervention) check has to be run on *every* target, not just the one that looked wrong last time.
 
+## An explicit prior toward null: L1 on the non-null attention mass
+
+The entropy penalty only ever rewarded *sharpness*; it has no preference for *which* candidate the gate lands on, so a globally-useful-but-wrong shortcut was just as attractive to it as a correct, conditional dependency. Added `--null-prior-weight`: since attention weights always sum to 1, `sum(non-null weights) == 1 - null_weight`, so an L1 penalty on the non-null mass is exactly a direct, directional prior — "default to no dependency unless a real MSE improvement is worth paying for" — rather than "be peaked, on whatever." Unlike the distance bias, this doesn't presume *which* candidate should be suppressed; it just makes attending to *anything* cost something.
+
+Tested at two strengths on the ball predictor, using the `epsilon_track_ball` data (where "player" was the relocated shortcut):
+
+| `null_prior_weight` | val MSE @ ep50 | mean attn @ ep50 | entropy @ ep50 |
+|---|---|---|---|
+| 0 (baseline, no prior) | 3.27 | player=0.88, enemy=0.04, null=0.08 | 0.222 |
+| 0.5 | 3.34 | player=0.83, enemy=0.05, null=0.12 | 0.289 |
+| 5.0 | **3.14** | player=0.00, enemy=0.00, **null=1.00** | 0.008 |
+
+At `0.5` the effect is real but mild (null mass 8% → 12%) — the MSE term (scale ~3-9) simply dominates a coefficient bounded by 1. At `5.0` the gate **collapses to essentially 100% null attention, and validation MSE doesn't get worse — it gets slightly *better***. That's a clean, independent confirmation that the "player"/"enemy" attention the gate had been relying on was providing little to no real predictive value beyond what the ball's own history already captures: forcing it away costs almost nothing, which is exactly what you'd expect if it really was shortcut correlation rather than a genuine, load-bearing dependency.
+
+**This is informative, but not obviously a fix, and needs a caveat before treating it as progress.** A strong null-prior makes "attend to nothing, always" a very easy local optimum — L1 cost is paid every time *any* non-null candidate is used, even if that use is sparse and genuinely conditional (e.g. only right at the moment of an actual bounce, which is a small fraction of all steps). We haven't checked whether a real, sparse, bounce-timed dependency would have survived this pressure or gotten washed out along with the confound — collapsing to null everywhere is consistent with either "the confound was all there ever was" or "there was a little real signal too, and the prior swept it away along with the shortcut." Distinguishing those needs checking attention specifically at the handful of real bounce timesteps (`bounce_stats.py` already finds these), not just at validation-set average.
+
 ## Next steps
 
+- **Check whether a null-prior strong enough to kill the confound also kills real, sparse, bounce-timed dependency** — bucket attention specifically at the actual detected bounce timesteps (not just by court position, which is a coarser proxy) vs. everywhere else, across a sweep of `null_prior_weight` values. This is the direct way to tell "the prior worked" apart from "the prior over-corrected."
 - **This is now real evidence that the confound is structural, not just a data-availability artifact.** Both the "give it a proximity feature" and "give it better data" fixes independently ran into the same failure mode: the gate favors whichever candidate is *globally* the best proxy for the target's outcome over one that's *conditionally* relevant. That points toward needing to test at the moment of an actual bounce specifically (not just "which side of the court"), or toward approach A's hard/discrete gating, more than toward further data or feature engineering.
 - **Actually wiring up `lazy_enemy` (or an analogous "lazy player" mod) is now the more informative test than ever**: since the enemy's "ball" dependency now looks plausibly genuine (not confounded), checking whether it survives `lazy_enemy` intervention — versus checking whether the ball's "player"/"enemy" dependency degrades correctly under the same intervention — would cleanly separate real dependencies from relocated shortcuts, which the static court-position check alone can no longer fully do (it already caught one shortcut moving to a new home).
 - Re-run the `inspect_gate.py` court-position check (and the return-rate check) on every future variant before trusting any resulting numbers — standing rule, now doubly confirmed necessary.

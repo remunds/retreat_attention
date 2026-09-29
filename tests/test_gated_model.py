@@ -1,17 +1,41 @@
 """Fast end-to-end smoke test for approach B: the gated (cross-attention) world model."""
 
 import jax
+import numpy as np
 import pytest
 
 from world_model.data import collect_rollout
 from world_model.gated_model import attention_entropy, gate_forward, init_gate_params
-from world_model.objects import OBJECT_DIMS
-from world_model.train_gated import train_object
+from world_model.objects import OBJECT_DIMS, distance
+from world_model.train_gated import WINDOW, train_object
+from world_model.windows import build_joint_dataset
 
 
 @pytest.fixture(scope="module")
 def data():
     return collect_rollout(num_steps=300, seed=0)
+
+
+def _mean_null_weight(result, data, target_name):
+    other_names = result["other_names"]
+    include_action = result["include_action"]
+    dataset = build_joint_dataset(
+        data, target_name, WINDOW, list(OBJECT_DIMS), include_action=include_action, distance_fn=distance
+    )
+    dim_t = len(result["y_mean"])
+    own_norm = (dataset["own"] - result["own_mean"]) / result["own_std"]
+    own_current_norm = own_norm[:, -dim_t:]
+    candidates_norm, distances_norm = {}, {}
+    for name in other_names:
+        mean, std = result["other_stats"][name]
+        candidates_norm[name] = (dataset[name] - mean) / std
+        distances_norm[name] = dataset[f"{name}_distance"] / result["dist_scale"][name]
+    if include_action:
+        candidates_norm["action"] = jax.nn.one_hot(dataset["action"], result["num_actions"])
+    _, weights, _ = gate_forward(
+        result["gate_params"], own_current_norm, candidates_norm, result["candidate_names"], 1.0, distances_norm
+    )
+    return float(np.mean(np.array(weights)[:, -1]))
 
 
 def test_gate_forward_weights_sum_to_one():
@@ -85,3 +109,23 @@ def test_train_gated_object_smoke(data, head):
         assert "gate_params" in result
         assert "pred_params" in result
         assert result["head"] == head
+
+
+def test_null_prior_weight_pushes_attention_toward_null(data):
+    common = dict(
+        target_name="ball",
+        data=data,
+        epochs=5,
+        batch_size=32,
+        lr=1e-3,
+        gate_lr=5e-3,
+        sparsity_weight=0.01,
+        temperature_start=1.0,
+        temperature_end=1.0,
+    )
+    result_off = train_object(key=jax.random.PRNGKey(0), null_prior_weight=0.0, **common)
+    result_on = train_object(key=jax.random.PRNGKey(0), null_prior_weight=2.0, **common)
+
+    null_off = _mean_null_weight(result_off, data, "ball")
+    null_on = _mean_null_weight(result_on, data, "ball")
+    assert null_on > null_off

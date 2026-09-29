@@ -46,6 +46,19 @@ candidate's score, so distance can only ever suppress attention, never
 inflate it, but starts near-zero so it doesn't presume distance matters
 before training says so — deliberately soft, since Pong is only the first
 environment this is meant to eventually generalize past.
+
+Neither of those fixed it — an "intermediate agent" data-collection policy
+(more player-ball bounces) just relocated the shortcut from "enemy" to
+"player" instead of resolving it. The entropy penalty only rewards
+*sharpness*; it has no preference for *which* candidate becomes dominant, so
+a globally-useful (but wrong) shortcut is just as attractive to it as a
+correct, conditional dependency. `--null-prior-weight` adds an L1 penalty on
+the *non-null* attention mass (`sum(weights[:-1])`, i.e. `1 - null_weight`) —
+a direct, directional prior that attention should default to "no dependency"
+unless a real MSE improvement is worth paying the L1 cost for. Unlike the
+distance bias, this is deliberately *not* candidate-specific: it doesn't
+presume which object should get suppressed, only that *something* other than
+null needs to earn its keep.
 """
 
 import argparse
@@ -103,6 +116,7 @@ def train_object(
     temperature_start: float,
     temperature_end: float,
     head: str = "mlp",
+    null_prior_weight: float = 0.0,
 ):
     other_names = [name for name in OBJECT_DIMS if name != target_name]
     dim_t = OBJECT_DIMS[target_name]
@@ -179,16 +193,18 @@ def train_object(
         pred, weights, _ = forward_pass(params, own_batch, candidates_batch, distances_batch, temperature)
         mse = jnp.mean((pred - y_batch) ** 2)
         entropy = jnp.mean(attention_entropy(weights))
-        return mse + sparsity_weight * entropy, (mse, entropy)
+        non_null_mass = jnp.mean(jnp.sum(weights[:, :-1], axis=-1))  # L1 on non-null weights == 1 - mean null weight
+        loss = mse + sparsity_weight * entropy + null_prior_weight * non_null_mass
+        return loss, (mse, entropy, non_null_mass)
 
     @jax.jit
     def step(params, opt_state, own_batch, candidates_batch, distances_batch, y_batch, temperature):
-        (loss, (mse, entropy)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+        (loss, (mse, entropy, non_null_mass)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
             params, own_batch, candidates_batch, distances_batch, y_batch, temperature
         )
         updates, opt_state = opt.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
-        return params, opt_state, mse, entropy
+        return params, opt_state, mse, entropy, non_null_mass
 
     rng = np.random.default_rng(0)
     num_train = len(own_train)
@@ -199,7 +215,7 @@ def train_object(
             idx = perm[i : i + batch_size]
             candidates_batch = {n: v[idx] for n, v in candidates_train.items()}
             distances_batch = {n: v[idx] for n, v in distances_train.items()}
-            params, opt_state, _, _ = step(
+            params, opt_state, _, _, _ = step(
                 params, opt_state, own_train[idx], candidates_batch, distances_batch, y_train[idx], temperature
             )
 
@@ -249,6 +265,7 @@ def main():
     parser.add_argument("--temperature-start", type=float, default=2.0)
     parser.add_argument("--temperature-end", type=float, default=0.1)
     parser.add_argument("--head", choices=["mlp", "linear"], default="mlp")
+    parser.add_argument("--null-prior-weight", type=float, default=0.0)
     args = parser.parse_args()
 
     raw = np.load(args.data)
@@ -271,6 +288,7 @@ def main():
             args.temperature_start,
             args.temperature_end,
             args.head,
+            args.null_prior_weight,
         )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
