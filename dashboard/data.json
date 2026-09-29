@@ -1,7 +1,7 @@
 {
- "generated": 1790674943.5805461,
- "generated_iso": "2026-09-29T11:42:23",
- "git": "dad3e5d Add experiments 2-5 (enemy interventions, gated actor, receiver-driven gates) and leakage diagnostics",
+ "generated": 1790676835.214786,
+ "generated_iso": "2026-09-29T12:13:55",
+ "git": "fce6f87 Add experiment 6: observation interventions for the imagination-trained actor; meets lazy_enemy goal",
  "target": 10.0,
  "experiments": [
   {
@@ -133,19 +133,39 @@
    "status": "evaluated",
    "updated": 1790614640.8648612,
    "video": {
-    "src": "media/experiment_sparse_object_wm.mp4",
-    "ckpt": "runs/sow_v1/round4.pkl",
-    "ckpt_mtime": 1790614577.3955734,
     "run": "sow_v1",
     "label": "round 4 (latest)",
-    "rendered": 1790674850.0009434,
-    "steps": 450,
-    "fps": 15,
+    "ckpt": "runs/sow_v1/round4.pkl",
     "greedy": false,
     "has_actor": true,
-    "imagined_points": {
-     "agent": 6,
-     "enemy": 0
+    "views": {
+     "real_lazy": {
+      "src": "media/experiment_sparse_object_wm__real_lazy.mp4",
+      "file": "experiment_sparse_object_wm__real_lazy.mp4",
+      "title": "REAL GAME \u00b7 lazy_enemy",
+      "points": {
+       "agent": 3,
+       "enemy": 3
+      }
+     },
+     "wm_pong": {
+      "src": "media/experiment_sparse_object_wm__wm_pong.mp4",
+      "file": "experiment_sparse_object_wm__wm_pong.mp4",
+      "title": "WORLD MODEL \u00b7 Pong starts",
+      "points": {
+       "agent": 10,
+       "enemy": 0
+      }
+     },
+     "wm_lazy": {
+      "src": "media/experiment_sparse_object_wm__wm_lazy.mp4",
+      "file": "experiment_sparse_object_wm__wm_lazy.mp4",
+      "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+      "points": {
+       "agent": 6,
+       "enemy": 1
+      }
+     }
     }
    }
   },
@@ -410,19 +430,39 @@
    "status": "evaluated",
    "updated": 1790669659.9177527,
    "video": {
-    "src": "media/experiment_intervention_actor.mp4",
-    "ckpt": "runs/ia_v1/round4.pkl",
-    "ckpt_mtime": 1790669280.4055676,
     "run": "ia_v1",
     "label": "round 4 (latest)",
-    "rendered": 1790674855.4497178,
-    "steps": 450,
-    "fps": 15,
+    "ckpt": "runs/ia_v1/round4.pkl",
     "greedy": false,
     "has_actor": true,
-    "imagined_points": {
-     "agent": 8,
-     "enemy": 0
+    "views": {
+     "real_lazy": {
+      "src": "media/experiment_intervention_actor__real_lazy.mp4",
+      "file": "experiment_intervention_actor__real_lazy.mp4",
+      "title": "REAL GAME \u00b7 lazy_enemy",
+      "points": {
+       "agent": 1,
+       "enemy": 3
+      }
+     },
+     "wm_pong": {
+      "src": "media/experiment_intervention_actor__wm_pong.mp4",
+      "file": "experiment_intervention_actor__wm_pong.mp4",
+      "title": "WORLD MODEL \u00b7 Pong starts",
+      "points": {
+       "agent": 8,
+       "enemy": 0
+      }
+     },
+     "wm_lazy": {
+      "src": "media/experiment_intervention_actor__wm_lazy.mp4",
+      "file": "experiment_intervention_actor__wm_lazy.mp4",
+      "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+      "points": {
+       "agent": 5,
+       "enemy": 0
+      }
+     }
     }
    }
   },
@@ -558,19 +598,39 @@
    "status": "evaluated",
    "updated": 1790670623.6377068,
    "video": {
-    "src": "media/experiment_gated_actor.mp4",
-    "ckpt": "runs/ga_v3/round4.pkl",
-    "ckpt_mtime": 1790670337.1916447,
     "run": "ga_v3",
     "label": "round 4 (latest)",
-    "rendered": 1790674861.3794274,
-    "steps": 450,
-    "fps": 15,
+    "ckpt": "runs/ga_v3/round4.pkl",
     "greedy": false,
     "has_actor": true,
-    "imagined_points": {
-     "agent": 14,
-     "enemy": 0
+    "views": {
+     "real_lazy": {
+      "src": "media/experiment_gated_actor__real_lazy.mp4",
+      "file": "experiment_gated_actor__real_lazy.mp4",
+      "title": "REAL GAME \u00b7 lazy_enemy",
+      "points": {
+       "agent": 2,
+       "enemy": 3
+      }
+     },
+     "wm_pong": {
+      "src": "media/experiment_gated_actor__wm_pong.mp4",
+      "file": "experiment_gated_actor__wm_pong.mp4",
+      "title": "WORLD MODEL \u00b7 Pong starts",
+      "points": {
+       "agent": 20,
+       "enemy": 0
+      }
+     },
+     "wm_lazy": {
+      "src": "media/experiment_gated_actor__wm_lazy.mp4",
+      "file": "experiment_gated_actor__wm_lazy.mp4",
+      "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+      "points": {
+       "agent": 8,
+       "enemy": 4
+      }
+     }
     }
    }
   },
@@ -659,19 +719,39 @@
    "status": "wm_only",
    "updated": 1790668647.2997622,
    "video": {
-    "src": "media/experiment_receiver_gates.mp4",
-    "ckpt": "runs/rg_wmonly/wm_only.pkl",
-    "ckpt_mtime": 1790668647.2947624,
     "run": "rg_wmonly",
     "label": "world model only",
-    "rendered": 1790674866.6304624,
-    "steps": 450,
-    "fps": 15,
+    "ckpt": "runs/rg_wmonly/wm_only.pkl",
     "greedy": false,
     "has_actor": false,
-    "imagined_points": {
-     "agent": 1,
-     "enemy": 27
+    "views": {
+     "real_lazy": {
+      "src": "media/experiment_receiver_gates__real_lazy.mp4",
+      "file": "experiment_receiver_gates__real_lazy.mp4",
+      "title": "REAL GAME \u00b7 lazy_enemy",
+      "points": {
+       "agent": 1,
+       "enemy": 10
+      }
+     },
+     "wm_pong": {
+      "src": "media/experiment_receiver_gates__wm_pong.mp4",
+      "file": "experiment_receiver_gates__wm_pong.mp4",
+      "title": "WORLD MODEL \u00b7 Pong starts",
+      "points": {
+       "agent": 1,
+       "enemy": 19
+      }
+     },
+     "wm_lazy": {
+      "src": "media/experiment_receiver_gates__wm_lazy.mp4",
+      "file": "experiment_receiver_gates__wm_lazy.mp4",
+      "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+      "points": {
+       "agent": 0,
+       "enemy": 17
+      }
+     }
     }
    }
   },
@@ -963,34 +1043,54 @@
    "status": "wm_only",
    "updated": 1790671109.821973,
    "video": {
-    "src": "media/experiment_receiver_soft_gates.mp4",
-    "ckpt": "runs/rste_wmonly_g0.02/wm_only.pkl",
-    "ckpt_mtime": 1790671109.815973,
     "run": "rste_wmonly_g0.02",
     "label": "world model only",
-    "rendered": 1790674872.0622275,
-    "steps": 450,
-    "fps": 15,
+    "ckpt": "runs/rste_wmonly_g0.02/wm_only.pkl",
     "greedy": false,
     "has_actor": false,
-    "imagined_points": {
-     "agent": 1,
-     "enemy": 9
+    "views": {
+     "real_lazy": {
+      "src": "media/experiment_receiver_soft_gates__real_lazy.mp4",
+      "file": "experiment_receiver_soft_gates__real_lazy.mp4",
+      "title": "REAL GAME \u00b7 lazy_enemy",
+      "points": {
+       "agent": 1,
+       "enemy": 10
+      }
+     },
+     "wm_pong": {
+      "src": "media/experiment_receiver_soft_gates__wm_pong.mp4",
+      "file": "experiment_receiver_soft_gates__wm_pong.mp4",
+      "title": "WORLD MODEL \u00b7 Pong starts",
+      "points": {
+       "agent": 3,
+       "enemy": 19
+      }
+     },
+     "wm_lazy": {
+      "src": "media/experiment_receiver_soft_gates__wm_lazy.mp4",
+      "file": "experiment_receiver_soft_gates__wm_lazy.mp4",
+      "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+      "points": {
+       "agent": 0,
+       "enemy": 5
+      }
+     }
     }
    }
   },
   {
    "module": "experiment_observation_interventions",
    "py": "experiment_observation_interventions.py",
-   "md": null,
-   "title": "Experiment 6: actor trained in imagination with interventions on its *observation* of the enemy.",
+   "md": "experiment_observation_interventions.md",
+   "title": "Experiment 6: actor trained in imagination with interventions on its observation of the enemy",
    "number": 6,
-   "summary": "This experiment avoids needing a causally correct world model for the enemy:\n- Imagination uses experiment 1's world model unchanged (dynamics exactly as learned from\n  unmodified Pong).\n- In each imagined rally, with probability 1 - p_none, the enemy position that the *actor sees* is\n  replaced by an intervened track: `freeze` (the observed enemy stops and restarts at random\n  times), `scale` (it moves with a random fraction/multiple of the true enemy's motion), or\n  `random walk`. The world model, the ball, the reward and the true enemy are not changed. The\n  actor therefore learns that its enemy input can be unreliable and has to win using the ball and\n  its own paddle, while it can still use the enemy when its track looks normal.\n- These are generic interventions on one object's observed dynamics; `lazy_enemy` is never used\n  for training or model selection. The choice to intervene on the enemy (the object not controlled\n  by the agent and not the ball it must hit) is a design decision of this experiment.\n- Everything else (world model, data collection rounds, PPO, MLP actor, selection on unmodified\n  Pong) is identical to experiment 1.",
-   "summary_source": "docstring",
-   "goal": "",
-   "question": "",
-   "results": "",
-   "setup": "",
+   "summary": "Experiment 1's world model is kept unchanged. The actor is trained only in imagination, but in a\nrandom subset of imagined rallies it sees an intervened enemy (frozen, scaled motion, or a random\nwalk), while the imagined game itself is unchanged. With interventions in 90 % of the rallies\n(`--p_none 0.1`), **both seeds meet the goal: final score +17.22 and +16.84 with `lazy_enemy`**\n(32 / 32 games won each), and +19.50 / +17.03 on unmodified Pong. With interventions in 60 % of the\nrallies, only one of two seeds did (+15.62 and +3.09).",
+   "summary_source": "md",
+   "goal": "Reach a **final score (agent points minus enemy points) of at least +10** on average with\n`lazy_enemy`, with an actor trained entirely inside a world model fitted only to unmodified Pong.",
+   "question": "Experiments 2\u20135 showed that the world model's ball prediction depends on the enemy even far from a\nbounce, and that no gating variant removes this. So interventions on the enemy *inside* the world\nmodel also distort the imagined ball (exp. 2: +0.2). Can the actor become robust to changed enemy\ndynamics if the interventions are applied only to what the actor *sees*? The imagined dynamics\nthen stay exactly as learned from Pong, and the actor has to learn to win without relying on the\nenemy's position.",
+   "results": "Real unmodified Pong during training (greedy, player : enemy, 32 games) and the imagined win rate\nof points in the last PPO update, in clean vs. intervened rallies:\n\n| round | `oi_s0` | `oi_s1` | `oi_p01_s0` | `oi_p01_s1` | imagined win rate clean / intervened (`oi_p01_s0`) |\n|---|---|---|---|---|---|\n| 0 | 16.09 : 19.84 | 12.50 : 20.09 | 20.88 : 13.94 | 20.75 : 14.47 | 0.57 / 0.56 |\n| 1 | 21.00 : 3.84 | 21.00 : 8.50 | 21.00 : 6.34 | 20.66 : 13.03 | 0.89 / 0.87 |\n| 2 | 21.00 : 7.16 | **21.00 : 3.22** | 21.00 : 3.12 | 21.00 : 5.09 | 0.94 / 0.92 |\n| 3 | **21.00 : 3.56** | 21.00 : 4.53 | 21.00 : 3.00 | 21.00 : 6.88 | 0.94 / 0.95 |\n| 4 | 21.00 : 4.59 | 20.34 : 4.78 | **21.00 : 1.50** | **20.72 : 3.62** | 0.94 / 0.94 |\n\n(bold = selected checkpoint)\n\nRobustness check used for selection (`p_none 0.1`, selected checkpoints, 32 games): final score on\nPong +20.06 / +18.09 and with a frozen view of the enemy +19.75 / +18.41 (seed 0 / seed 1). The\nactors play equally well when their view of the enemy is broken.\n\nHeld-out evaluation (32 games each):\n\n| run | `p_none` | Pong final score | `lazy_enemy` player : enemy | **`lazy_enemy` final score** | games won | worst game |\n|---|---|---|---|---|---|---|\n| `oi_s0` | 0.4 | +17.06 | 21.00 : 5.38 | **+15.62** | 32 / 32 | +10 |\n| `oi_s1` | 0.4 | +17.84 | 20.38 : 17.28 | **+3.09** | 25 / 32 | -8 |\n| `oi_p01_s0` | 0.1 | +19.50 | 21.00 : 3.78 | **+17.22** | 32 / 32 | +15 |\n| `oi_p01_s1` | 0.1 | +17.03 | 21.00 : 4.16 | **+16.84** | 32 / 32 | +10 |\n\n(One of `oi_p01_s1`'s 32 unmodified-Pong games hit the 10,000-step cap at 0 : 0, which lowers its\nPong mean; all its `lazy_enemy` games finished.)\n\nFor comparison: exp. 1 -8.38, exp. 2 +0.19, exp. 3 -4.94.\n\nWorld-model 1-step RMSE on the actors' trajectories (`oi_p01_s0`): on Pong ball 1.0 px and enemy\n0.9 px; with `lazy_enemy` ball 4.2 px and enemy 6.9 px. As expected the world model itself is not\nrobust (the enemy's prediction is wrong under the changed dynamics, and the ball's prediction\nstill depends on the enemy), but the actor no longer inherits this.\n\n**The goal is met**: an actor trained entirely in a world model learned only from unmodified Pong\nwins with `lazy_enemy` by a final score of +17.22 (seed 0) and +16.84 (seed 1), with no use of\n`lazy_enemy` for training, tuning or selection.\n\n### Interpretation\n\n- Applying interventions to the actor's *observation* works where interventions on the world\n  model's dynamics (exp. 2) did not: the imagined physics stays consistent, and the actor learns a\n  strategy that wins using the ball and its own paddle. Its imagined win rate is the same with and\n  without an intervened enemy view, and so is its real Pong score with a frozen enemy view.\n- The fraction of intervened rallies matters. At 60 % one seed still learned to rely on the enemy\n  when its track looked normal (+3.1 with `lazy_enemy`); at 90 % both seeds are robust\n  (+16.8 and +17.2), and they are even stronger on unmodified Pong than exp. 1 (+19.5 vs +19.0).\n- Caveats: (1) intervening on the enemy object is a design choice. It encodes the assumption that\n  the opponent's behaviour may change, and it uses a generic family of perturbations (freeze,\n  scaled motion, random walk), not the `lazy_enemy` rule. (2) The `p_none` 0.4 \u2192 0.1 change was\n  made after seeing the 0.4 results on `lazy_enemy`, so the 0.1 results are not a fully blind test\n  of that one hyperparameter. The selection rule was fixed before the 0.1 runs, and each of their\n  checkpoints was evaluated once. (3) The robustness comes from the actor; making the world model\n  itself object-contained (experiments 2\u20135) remains open.",
+   "setup": "- World model, data collection (5 rounds \u00d7 512k real steps of unmodified Pong; round 0 random,\n  then the current actor with 10 % random actions), PPO (2048 imagined envs, 400 updates per\n  round), MLP actor: identical to experiment 1.\n- In each imagined rally the actor's view of the enemy follows one mode: `none` (the true enemy,\n  probability `p_none`), `freeze` (the seen enemy stops and restarts; switch probability 0.1 per\n  step), `scale` (moves with a random factor in [0, 1.5] of the true enemy's motion) or\n  `random walk` (steps of -8\u20268 px). The other modes share the rest of the probability in the ratio\n  0.3 : 0.15 : 0.15. The world model, the ball, the reward and the true enemy are never changed.\n- Model selection used unmodified Pong only:\n  - first runs (`oi_s0`, `oi_s1`): the round and action mode with the best Pong final score\n    (as in exp. 1);\n  - `p_none 0.1` runs: the fixed rule of `select_robust_checkpoint.py`, the mean of the Pong final\n    score and the final score on Pong when the actor sees the enemy frozen at a random height\n    (a generic sensor-failure check on the unmodified game). For both seeds it picked the same\n    checkpoint as the plain Pong score would have (round 4, greedy).\n- `lazy_enemy` was evaluated exactly once per selected checkpoint: 32 full games, seeds from\n  `PRNGKey(12345)`, the same seeds for Pong and `lazy_enemy`.",
    "mtime": 1790671204.363131,
    "runs": [
     {
@@ -1461,19 +1561,39 @@
    "status": "goal_met",
    "updated": 1790674903.8955367,
    "video": {
-    "src": "media/experiment_observation_interventions.mp4",
-    "ckpt": "runs/oi_p01_s0/round4.pkl",
-    "ckpt_mtime": 1790674553.4333274,
     "run": "oi_p01_s0",
     "label": "round 4 (latest)",
-    "rendered": 1790674877.8216472,
-    "steps": 450,
-    "fps": 15,
+    "ckpt": "runs/oi_p01_s0/round4.pkl",
     "greedy": false,
     "has_actor": true,
-    "imagined_points": {
-     "agent": 10,
-     "enemy": 0
+    "views": {
+     "real_lazy": {
+      "src": "media/experiment_observation_interventions__real_lazy.mp4",
+      "file": "experiment_observation_interventions__real_lazy.mp4",
+      "title": "REAL GAME \u00b7 lazy_enemy",
+      "points": {
+       "agent": 5,
+       "enemy": 1
+      }
+     },
+     "wm_pong": {
+      "src": "media/experiment_observation_interventions__wm_pong.mp4",
+      "file": "experiment_observation_interventions__wm_pong.mp4",
+      "title": "WORLD MODEL \u00b7 Pong starts",
+      "points": {
+       "agent": 12,
+       "enemy": 0
+      }
+     },
+     "wm_lazy": {
+      "src": "media/experiment_observation_interventions__wm_lazy.mp4",
+      "file": "experiment_observation_interventions__wm_lazy.mp4",
+      "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+      "points": {
+       "agent": 5,
+       "enemy": 0
+      }
+     }
     }
    }
   }

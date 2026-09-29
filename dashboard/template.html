@@ -59,7 +59,7 @@ header.board p { margin: 10px 0 0; color: var(--ink-2); max-width: 68ch; }
 .toolbar .spacer { flex: 1; }
 
 /* grid + cards */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); gap: 20px; align-items: start; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 720px), 1fr)); gap: 20px; align-items: start; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 16px; min-width: 0; }
 .card.is-goal_met { border-color: var(--good); box-shadow: 0 0 0 1px var(--good) inset; }
 .card-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; }
@@ -88,9 +88,14 @@ header.board p { margin: 10px 0 0; color: var(--ink-2); max-width: 68ch; }
 .tablewrap { overflow-x: auto; max-width: 100%; }
 
 .video { display: grid; gap: 6px; }
-.video video { width: 100%; max-width: 100%; aspect-ratio: 640 / 464; background: #181a1e; border-radius: 6px; display: block; }
+.videos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) { .videos { grid-template-columns: 1fr; } }
+.vid { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.vid figcaption { display: grid; gap: 1px; }
+.vname { font: 600 13px/1.2 var(--f-display); }
+.video video { width: 100%; max-width: 100%; aspect-ratio: 320 / 696; background: #181a1e; border-radius: 6px; display: block; }
 .caption { font: 400 12px/1.4 var(--f-mono); color: var(--muted); overflow-wrap: anywhere; }
-.novideo { aspect-ratio: 640 / 464; max-width: 100%; border: 1px dashed var(--line); border-radius: 6px; display: grid; place-items: center;
+.novideo { aspect-ratio: 3 / 1.4; max-width: 100%; border: 1px dashed var(--line); border-radius: 6px; display: grid; place-items: center;
   color: var(--muted); font-size: 13px; text-align: center; padding: 16px; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; background: var(--line);
@@ -143,7 +148,7 @@ footer code { background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
     <div>Built by <code>dashboard/build_dashboard.py</code> from the experiment files, their Markdown notes and <code>runs/</code>.
       To add an experiment, create <code>experiment_x.py</code> with <code>experiment_x.md</code> and rebuild:
       <code>CUDA_VISIBLE_DEVICES= uv run dashboard/build_dashboard.py</code>.</div>
-    <div>Videos: the newest checkpoint of each experiment's most recent run, played inside its own world model (imagination), started from real Pong histories. Lines connect each object to the objects its next-step prediction uses; opacity is the gate value.</div>
+    <div>Videos use the newest checkpoint of each experiment's most recent run: the actor in the real lazy_enemy game, and the actor inside its own world model started from real Pong or real lazy_enemy histories. Lines connect each object to the objects its next-step prediction uses; opacity is the gate value.</div>
   </footer>
 </div>
 
@@ -302,12 +307,23 @@ function runsTable(e) {
   return `<div class="tablewrap"><table class="runs"><thead><tr><th>Run</th><th>Progress</th><th>Pong</th><th>lazy_enemy</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+const VIEW_ORDER = [
+  ["real_lazy", "Real game · lazy_enemy", "the actor in the actual held-out game; gates from the world model on the real history"],
+  ["wm_pong", "World model · Pong", "the actor inside the world model, started from real Pong histories"],
+  ["wm_lazy", "World model · lazy_enemy", "the actor inside the world model, started from real lazy_enemy histories"],
+];
 function videoBlock(e) {
   const v = e.video;
-  if (!v || v.error) return `<div class="novideo">${v && v.error ? "Video could not be rendered: " + esc(v.error) : "No checkpoint yet, so no world-model video."}</div>`;
-  const pts = v.imagined_points ? ` · imagined points ${v.imagined_points.agent} : ${v.imagined_points.enemy}` : "";
-  return `<div class="video"><video src="${esc(v.src)}" muted loop autoplay playsinline controls preload="metadata"></video>
-    <div class="caption">${esc(v.run)} · ${esc(v.label)} · ${v.has_actor ? (v.greedy ? "greedy actor" : "sampling actor") : "random actions"}${pts}</div></div>`;
+  if (!v || v.error) return `<div class="novideo">${v && v.error ? "Videos could not be rendered: " + esc(v.error) : "No checkpoint yet, so no videos."}</div>`;
+  const who = v.has_actor ? (v.greedy ? "greedy actor" : "sampling actor") : "random actions (no actor)";
+  const cells = VIEW_ORDER.filter(([k]) => v.views[k]).map(([k, name, desc]) => {
+    const d = v.views[k];
+    const pts = d.points ? `${k.startsWith("real") ? "real" : "imagined"} points ${d.points.agent} : ${d.points.enemy}` : "";
+    return `<figure class="vid"><figcaption><span class="vname">${name}</span><span class="caption">${pts}</span></figcaption>
+      <video src="${esc(d.src)}" muted loop autoplay playsinline controls preload="metadata" title="${esc(desc)}"></video></figure>`;
+  }).join("");
+  return `<div class="video"><div class="videos">${cells}</div>
+    <div class="caption">${esc(v.run)} · ${esc(v.label)} · ${who} · 450 agent steps each</div></div>`;
 }
 
 function card(e) {

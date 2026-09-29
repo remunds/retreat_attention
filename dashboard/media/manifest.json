@@ -4,89 +4,221 @@
   "ckpt_mtime": 1790614577.3955734,
   "run": "sow_v1",
   "label": "round 4 (latest)",
-  "rendered": 1790674850.0009434,
-  "steps": 450,
-  "fps": 15,
+  "rendered": 1790676758.9558697,
   "greedy": false,
   "has_actor": true,
-  "imagined_points": {
-   "agent": 6,
-   "enemy": 0
-  }
+  "views": {
+   "real_lazy": {
+    "file": "experiment_sparse_object_wm__real_lazy.mp4",
+    "title": "REAL GAME \u00b7 lazy_enemy",
+    "points": {
+     "agent": 3,
+     "enemy": 3
+    }
+   },
+   "wm_pong": {
+    "file": "experiment_sparse_object_wm__wm_pong.mp4",
+    "title": "WORLD MODEL \u00b7 Pong starts",
+    "points": {
+     "agent": 10,
+     "enemy": 0
+    }
+   },
+   "wm_lazy": {
+    "file": "experiment_sparse_object_wm__wm_lazy.mp4",
+    "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+    "points": {
+     "agent": 6,
+     "enemy": 1
+    }
+   }
+  },
+  "steps": 450,
+  "fps": 15
  },
  "experiment_intervention_actor": {
   "ckpt": "runs/ia_v1/round4.pkl",
   "ckpt_mtime": 1790669280.4055676,
   "run": "ia_v1",
   "label": "round 4 (latest)",
-  "rendered": 1790674855.4497178,
-  "steps": 450,
-  "fps": 15,
+  "rendered": 1790676774.116589,
   "greedy": false,
   "has_actor": true,
-  "imagined_points": {
-   "agent": 8,
-   "enemy": 0
-  }
+  "views": {
+   "real_lazy": {
+    "file": "experiment_intervention_actor__real_lazy.mp4",
+    "title": "REAL GAME \u00b7 lazy_enemy",
+    "points": {
+     "agent": 1,
+     "enemy": 3
+    }
+   },
+   "wm_pong": {
+    "file": "experiment_intervention_actor__wm_pong.mp4",
+    "title": "WORLD MODEL \u00b7 Pong starts",
+    "points": {
+     "agent": 8,
+     "enemy": 0
+    }
+   },
+   "wm_lazy": {
+    "file": "experiment_intervention_actor__wm_lazy.mp4",
+    "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+    "points": {
+     "agent": 5,
+     "enemy": 0
+    }
+   }
+  },
+  "steps": 450,
+  "fps": 15
  },
  "experiment_gated_actor": {
   "ckpt": "runs/ga_v3/round4.pkl",
   "ckpt_mtime": 1790670337.1916447,
   "run": "ga_v3",
   "label": "round 4 (latest)",
-  "rendered": 1790674861.3794274,
-  "steps": 450,
-  "fps": 15,
+  "rendered": 1790676790.0435548,
   "greedy": false,
   "has_actor": true,
-  "imagined_points": {
-   "agent": 14,
-   "enemy": 0
-  }
+  "views": {
+   "real_lazy": {
+    "file": "experiment_gated_actor__real_lazy.mp4",
+    "title": "REAL GAME \u00b7 lazy_enemy",
+    "points": {
+     "agent": 2,
+     "enemy": 3
+    }
+   },
+   "wm_pong": {
+    "file": "experiment_gated_actor__wm_pong.mp4",
+    "title": "WORLD MODEL \u00b7 Pong starts",
+    "points": {
+     "agent": 20,
+     "enemy": 0
+    }
+   },
+   "wm_lazy": {
+    "file": "experiment_gated_actor__wm_lazy.mp4",
+    "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+    "points": {
+     "agent": 8,
+     "enemy": 4
+    }
+   }
+  },
+  "steps": 450,
+  "fps": 15
  },
  "experiment_receiver_gates": {
   "ckpt": "runs/rg_wmonly/wm_only.pkl",
   "ckpt_mtime": 1790668647.2947624,
   "run": "rg_wmonly",
   "label": "world model only",
-  "rendered": 1790674866.6304624,
-  "steps": 450,
-  "fps": 15,
+  "rendered": 1790676804.7823462,
   "greedy": false,
   "has_actor": false,
-  "imagined_points": {
-   "agent": 1,
-   "enemy": 27
-  }
+  "views": {
+   "real_lazy": {
+    "file": "experiment_receiver_gates__real_lazy.mp4",
+    "title": "REAL GAME \u00b7 lazy_enemy",
+    "points": {
+     "agent": 1,
+     "enemy": 10
+    }
+   },
+   "wm_pong": {
+    "file": "experiment_receiver_gates__wm_pong.mp4",
+    "title": "WORLD MODEL \u00b7 Pong starts",
+    "points": {
+     "agent": 1,
+     "enemy": 19
+    }
+   },
+   "wm_lazy": {
+    "file": "experiment_receiver_gates__wm_lazy.mp4",
+    "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+    "points": {
+     "agent": 0,
+     "enemy": 17
+    }
+   }
+  },
+  "steps": 450,
+  "fps": 15
  },
  "experiment_receiver_soft_gates": {
   "ckpt": "runs/rste_wmonly_g0.02/wm_only.pkl",
   "ckpt_mtime": 1790671109.815973,
   "run": "rste_wmonly_g0.02",
   "label": "world model only",
-  "rendered": 1790674872.0622275,
-  "steps": 450,
-  "fps": 15,
+  "rendered": 1790676819.5739768,
   "greedy": false,
   "has_actor": false,
-  "imagined_points": {
-   "agent": 1,
-   "enemy": 9
-  }
+  "views": {
+   "real_lazy": {
+    "file": "experiment_receiver_soft_gates__real_lazy.mp4",
+    "title": "REAL GAME \u00b7 lazy_enemy",
+    "points": {
+     "agent": 1,
+     "enemy": 10
+    }
+   },
+   "wm_pong": {
+    "file": "experiment_receiver_soft_gates__wm_pong.mp4",
+    "title": "WORLD MODEL \u00b7 Pong starts",
+    "points": {
+     "agent": 3,
+     "enemy": 19
+    }
+   },
+   "wm_lazy": {
+    "file": "experiment_receiver_soft_gates__wm_lazy.mp4",
+    "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+    "points": {
+     "agent": 0,
+     "enemy": 5
+    }
+   }
+  },
+  "steps": 450,
+  "fps": 15
  },
  "experiment_observation_interventions": {
   "ckpt": "runs/oi_p01_s0/round4.pkl",
   "ckpt_mtime": 1790674553.4333274,
   "run": "oi_p01_s0",
   "label": "round 4 (latest)",
-  "rendered": 1790674877.8216472,
-  "steps": 450,
-  "fps": 15,
+  "rendered": 1790676835.2128627,
   "greedy": false,
   "has_actor": true,
-  "imagined_points": {
-   "agent": 10,
-   "enemy": 0
-  }
+  "views": {
+   "real_lazy": {
+    "file": "experiment_observation_interventions__real_lazy.mp4",
+    "title": "REAL GAME \u00b7 lazy_enemy",
+    "points": {
+     "agent": 5,
+     "enemy": 1
+    }
+   },
+   "wm_pong": {
+    "file": "experiment_observation_interventions__wm_pong.mp4",
+    "title": "WORLD MODEL \u00b7 Pong starts",
+    "points": {
+     "agent": 12,
+     "enemy": 0
+    }
+   },
+   "wm_lazy": {
+    "file": "experiment_observation_interventions__wm_lazy.mp4",
+    "title": "WORLD MODEL \u00b7 lazy_enemy starts",
+    "points": {
+     "agent": 5,
+     "enemy": 0
+    }
+   }
+  },
+  "steps": 450,
+  "fps": 15
  }
 }

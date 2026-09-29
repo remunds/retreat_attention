@@ -15,9 +15,12 @@ Nothing has to be registered by hand. The builder finds:
   (`wm_only.json`), and held-out evaluations (`lazy_enemy_eval.json`, written by
   `evaluate_lazy_enemy.py`, also when the checkpoint was saved in `runs/` itself).
 - **videos**: for every experiment, the newest checkpoint of its most recently updated run
-  (latest `round*.pkl`, else `best.pkl`, else `wm_only.pkl`) is rolled out in imagination by
-  `dashboard/render_rollout.py` (CPU only) and saved to `dashboard/media/<experiment>.mp4`. Videos
-  are only re-rendered when that checkpoint changes (`dashboard/media/manifest.json`).
+  (latest `round*.pkl`, else `best.pkl`, else `wm_only.pkl`) is rendered by
+  `dashboard/render_rollout.py` (CPU only) in three views, saved as
+  `dashboard/media/<experiment>__<view>.mp4`: the actor in the real `lazy_enemy` game (`real_lazy`),
+  and the actor inside the world model started from real Pong (`wm_pong`) or real `lazy_enemy`
+  histories (`wm_lazy`). Videos are only re-rendered when that checkpoint changes
+  (`dashboard/media/manifest.json`).
 
 The dashboard only *displays* `lazy_enemy` results; it never trains, tunes or selects anything.
 
@@ -363,7 +366,14 @@ def status(e):
 # ----------------------------------------------------------------------------- videos
 
 
+def video_entry(module, m):
+    return dict(run=m["run"], label=m["label"], ckpt=m["ckpt"], greedy=m.get("greedy"), has_actor=m.get("has_actor"),
+                views={v: dict(src=f"media/{d['file']}", **d) for v, d in m.get("views", {}).items()})
+
+
 def update_videos(experiments, force=False):
+    import render_rollout
+
     os.makedirs(MEDIA, exist_ok=True)
     man_path = os.path.join(MEDIA, "manifest.json")
     manifest = load_json(man_path) or {}
@@ -376,24 +386,24 @@ def update_videos(experiments, force=False):
         ck = run["checkpoint"]
         ck_path = os.path.join(ROOT, ck["path"])
         ck_mtime = os.path.getmtime(ck_path)
-        out = os.path.join(MEDIA, f"{e['module']}.mp4")
+        prefix = os.path.join(MEDIA, e["module"])
         prev = manifest.get(e["module"])
-        fresh = prev and prev["ckpt"] == ck["path"] and abs(prev["ckpt_mtime"] - ck_mtime) < 1 and os.path.exists(out)
-        if time.time() - ck_mtime < 30:  # still being written
-            fresh = fresh or (prev is not None and os.path.exists(out))
+        have = prev is not None and set(prev.get("views", {})) == set(render_rollout.VIEWS) and all(
+            os.path.exists(os.path.join(MEDIA, d["file"])) for d in prev["views"].values())
+        fresh = have and prev["ckpt"] == ck["path"] and abs(prev["ckpt_mtime"] - ck_mtime) < 1
+        if time.time() - ck_mtime < 30:  # checkpoint still being written: keep the old videos for now
+            fresh = fresh or have
         if force or not fresh:
             print(f"rendering {e['module']} <- {ck['path']}", flush=True)
             try:
-                import render_rollout
-
-                meta = render_rollout.render(e["module"], ck_path, out, label=f"{run['name']} · {ck['label']}")
+                meta = render_rollout.render(e["module"], ck_path, prefix, label=f"{run['name']} · {ck['label']}")
             except Exception as exc:  # a broken checkpoint must not break the dashboard
                 print(f"  video failed: {exc!r}", flush=True)
                 e["video"] = dict(error=repr(exc), run=run["name"], ckpt=ck["path"])
                 continue
             manifest[e["module"]] = prev = dict(ckpt=ck["path"], ckpt_mtime=ck_mtime, run=run["name"],
                                                 label=ck["label"], rendered=time.time(), **meta)
-        e["video"] = dict(src=f"media/{e['module']}.mp4", **prev)
+        e["video"] = video_entry(e["module"], prev)
     with open(man_path, "w") as f:
         json.dump(manifest, f, indent=1)
 
@@ -442,7 +452,7 @@ def main():
         manifest = load_json(os.path.join(MEDIA, "manifest.json")) or {}
         for e in experiments:
             v = manifest.get(e["module"])
-            e["video"] = dict(src=f"media/{e['module']}.mp4", **v) if v else None
+            e["video"] = video_entry(e["module"], v) if v and "views" in v else None
     else:
         update_videos(experiments, force=args.force_video)
     write_outputs(experiments, unassigned, args.fragment)
