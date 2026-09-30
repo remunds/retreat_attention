@@ -45,4 +45,13 @@ CUDA_VISIBLE_DEVICES=5 uv run experiment_seaquest_diver_curriculum.py --agent ml
 
 ## Results
 
-Runs in progress.
+Progress (base game from the normal start, 32 games, sampled / greedy actions):
+
+| run | update (frames) | rescues per game | divers per game | score |
+|---|---|---|---|---|
+| `sq_dc_att` | 250 (66M) | 4.53 / 4.84 | 33.0 / 34.3 | 11634 / 13603 |
+| `sq_dc_mlp` | 250 (66M) | 0.28 / 0.44 | 9.9 / 10.1 | 693 / 992 |
+
+With the curriculum, the object-attention agent learns the rescue behaviour within 66M frames (all
+earlier agents stayed below 0.2 rescues per game). The MLP learns it much more slowly. Runs in
+progress; `gravity` is evaluated once on the finally selected checkpoint.

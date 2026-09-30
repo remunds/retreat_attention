@@ -1,7 +1,7 @@
 {
- "generated": 1790727025.9325902,
- "generated_iso": "2026-09-30T02:10:25",
- "git": "4b43489 Seaquest S3 (object-attention agent + potential shaping) and S4 (S3 + random currents); S1/S2 stopped",
+ "generated": 1790728269.4694908,
+ "generated_iso": "2026-09-30T02:31:09",
+ "git": "439cfc7 Seaquest: fix orientation input scaling; S5 start-state diver curriculum (attention and MLP agents)",
  "target": 10.0,
  "sq_target": 2.0,
  "experiments": [
@@ -165,7 +165,39 @@
    ],
    "status": "trained",
    "updated": 1790724359.9614644,
-   "video": null
+   "video": {
+    "run": "sq_ppo_b",
+    "label": "round 2 (latest)",
+    "ckpt": "runs/sq_ppo_b/round2.pkl",
+    "greedy": false,
+    "has_actor": true,
+    "game": "seaquest",
+    "steps": 900,
+    "views": {
+     "real_base": {
+      "src": "media/experiment_seaquest_ppo__real_base.mp4",
+      "file": "experiment_seaquest_ppo__real_base.mp4",
+      "title": "REAL GAME \u00b7 base Seaquest",
+      "stats": {
+       "rescues": 0,
+       "lives_lost": 4,
+       "score": 180,
+       "game_over": true
+      }
+     },
+     "real_gravity": {
+      "src": "media/experiment_seaquest_ppo__real_gravity.mp4",
+      "file": "experiment_seaquest_ppo__real_gravity.mp4",
+      "title": "REAL GAME \u00b7 gravity (held out)",
+      "stats": {
+       "rescues": 0,
+       "lives_lost": 5,
+       "score": 180,
+       "game_over": true
+      }
+     }
+    }
+   }
   },
   {
    "module": "experiment_seaquest_currents",
@@ -248,7 +280,39 @@
    ],
    "status": "trained",
    "updated": 1790724321.8569238,
-   "video": null
+   "video": {
+    "run": "sq_cur_a",
+    "label": "round 0 (latest)",
+    "ckpt": "runs/sq_cur_a/round0.pkl",
+    "greedy": false,
+    "has_actor": true,
+    "game": "seaquest",
+    "steps": 900,
+    "views": {
+     "real_base": {
+      "src": "media/experiment_seaquest_currents__real_base.mp4",
+      "file": "experiment_seaquest_currents__real_base.mp4",
+      "title": "REAL GAME \u00b7 base Seaquest",
+      "stats": {
+       "rescues": 0,
+       "lives_lost": 6,
+       "score": 200,
+       "game_over": true
+      }
+     },
+     "real_gravity": {
+      "src": "media/experiment_seaquest_currents__real_gravity.mp4",
+      "file": "experiment_seaquest_currents__real_gravity.mp4",
+      "title": "REAL GAME \u00b7 gravity (held out)",
+      "stats": {
+       "rescues": 0,
+       "lives_lost": 3,
+       "score": 380,
+       "game_over": true
+      }
+     }
+    }
+   }
   },
   {
    "module": "experiment_seaquest_object_attention",
@@ -299,67 +363,13 @@
    "summary_source": "md",
    "goal": "An agent trained on the base Seaquest game only that, with the held-out `gravity` mod, collects 6\ndivers and surfaces with them at least twice per game (`successful_rescues` >= 2), on average over\nat least 10 games.",
    "question": "Does starting training from states that already carry several divers make the long-horizon rescue\nbehaviour learnable, and does it then transfer, together with random currents, to the held-out\n`gravity` game?",
-   "results": "Runs in progress.",
+   "results": "Progress (base game from the normal start, 32 games, sampled / greedy actions):\n\n| run | update (frames) | rescues per game | divers per game | score |\n|---|---|---|---|---|\n| `sq_dc_att` | 250 (66M) | 4.53 / 4.84 | 33.0 / 34.3 | 11634 / 13603 |\n| `sq_dc_mlp` | 250 (66M) | 0.28 / 0.44 | 9.9 / 10.1 | 693 / 992 |\n\nWith the curriculum, the object-attention agent learns the rescue behaviour within 66M frames (all\nearlier agents stayed below 0.2 rescues per game). The MLP learns it much more slowly. Runs in\nprogress; `gravity` is evaluated once on the finally selected checkpoint.",
    "setup": "- Curriculum: at every game start and after every lost life, with probability 0.5, divers carried\n  := k ~ U{0..6}. The pickup bonus is not paid for these gifted divers.\n- Currents (as S2/S4): per game, with probability 0.25 none, otherwise one of 8 directions with a\n  per-step probability q ~ U(0, 1) of a 1 px displacement.\n- Reward: S3's (S1's shaped reward with diver bonus 2 and rescue bonus 10, plus potential shaping\n  towards the surface with 6 divers or with oxygen < 16).\n- Agents: `--agent attention` (S3's object-attention agent, orientation bug fixed) and `--agent mlp`\n  (S1's 2 x 512 MLP on `obs_features_v2`).\n- PPO: 512 envs, 128 steps, 4000 updates (1.05B frames), lr 3e-4, entropy 0.01, gamma 0.995.\n- Every 250 updates: 32 full games of the unmodified base game from its normal start. Selection:\n  most base-game rescues, then score.",
    "mtime": 1790726739.598578,
    "runs": [
     {
-     "name": "sq_dc_att",
-     "mtime": 1790727008.544867,
-     "config": {
-      "name": "sq_dc_att",
-      "seed": 0,
-      "num_envs": 512,
-      "T": 128,
-      "updates": 4000,
-      "epochs": 4,
-      "minibatches": 8,
-      "lr": 0.0003,
-      "gamma": 0.995,
-      "lam": 0.95,
-      "clip": 0.2,
-      "ent_coef": 0.01,
-      "vf_coef": 0.5,
-      "max_grad_norm": 0.5,
-      "diver_bonus": 2.0,
-      "rescue_bonus": 10.0,
-      "life_penalty": 0.0,
-      "surface_penalty": 0.0,
-      "eval_every": 250,
-      "eval_games": 32,
-      "eval_max_steps": 20000,
-      "c_surf": 2.0,
-      "c_ox": 1.0,
-      "ox_low": 16.0,
-      "agent": "attention",
-      "p_curriculum": 0.5,
-      "currents": 1,
-      "p_none": 0.25,
-      "q_min": 0.0,
-      "q_max": 1.0,
-      "experiment": "experiment_seaquest_diver_curriculum",
-      "game": "seaquest"
-     },
-     "experiment": "experiment_seaquest_diver_curriculum",
-     "game": "seaquest",
-     "rounds": [],
-     "rounds_total": null,
-     "kind": "started",
-     "evals": [],
-     "gevals": [],
-     "process": [
-      {
-       "elapsed_s": 20,
-       "cmd": "experiment_seaquest_diver_curriculum.py --agent attention --name sq_dc_att"
-      }
-     ],
-     "running": true,
-     "activity": "round 0: collecting / evaluating",
-     "checkpoint": null
-    },
-    {
      "name": "sq_dc_mlp",
-     "mtime": 1790727008.5798674,
+     "mtime": 1790728101.060391,
      "config": {
       "name": "sq_dc_mlp",
       "seed": 0,
@@ -396,25 +406,153 @@
      },
      "experiment": "experiment_seaquest_diver_curriculum",
      "game": "seaquest",
-     "rounds": [],
+     "selected": {
+      "round": 0,
+      "greedy": true,
+      "base_rescues": 0.4375,
+      "base_score": 991.875
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "update": 250,
+       "frames": 65536000,
+       "rescues_sample": 0.28125,
+       "rescues_greedy": 0.4375,
+       "divers_sample": 9.9375,
+       "divers_greedy": 10.09375,
+       "score_sample": 693.125,
+       "score_greedy": 991.875
+      }
+     ],
      "rounds_total": null,
-     "kind": "started",
+     "kind": "full",
      "evals": [],
      "gevals": [],
      "process": [
       {
-       "elapsed_s": 20,
+       "elapsed_s": 1156,
        "cmd": "experiment_seaquest_diver_curriculum.py --agent mlp --name sq_dc_mlp"
       }
      ],
      "running": true,
-     "activity": "round 0: collecting / evaluating",
-     "checkpoint": null
+     "activity": "PPO update 350/4000 \u00b7 92.0M frames",
+     "checkpoint": {
+      "path": "runs/sq_dc_mlp/round0.pkl",
+      "label": "round 0 (latest)"
+     }
+    },
+    {
+     "name": "sq_dc_att",
+     "mtime": 1790728125.4714866,
+     "config": {
+      "name": "sq_dc_att",
+      "seed": 0,
+      "num_envs": 512,
+      "T": 128,
+      "updates": 4000,
+      "epochs": 4,
+      "minibatches": 8,
+      "lr": 0.0003,
+      "gamma": 0.995,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "max_grad_norm": 0.5,
+      "diver_bonus": 2.0,
+      "rescue_bonus": 10.0,
+      "life_penalty": 0.0,
+      "surface_penalty": 0.0,
+      "eval_every": 250,
+      "eval_games": 32,
+      "eval_max_steps": 20000,
+      "c_surf": 2.0,
+      "c_ox": 1.0,
+      "ox_low": 16.0,
+      "agent": "attention",
+      "p_curriculum": 0.5,
+      "currents": 1,
+      "p_none": 0.25,
+      "q_min": 0.0,
+      "q_max": 1.0,
+      "experiment": "experiment_seaquest_diver_curriculum",
+      "game": "seaquest"
+     },
+     "experiment": "experiment_seaquest_diver_curriculum",
+     "game": "seaquest",
+     "selected": {
+      "round": 0,
+      "greedy": true,
+      "base_rescues": 4.84375,
+      "base_score": 13603.125
+     },
+     "rounds": [
+      {
+       "round": 0,
+       "update": 250,
+       "frames": 65536000,
+       "rescues_sample": 4.53125,
+       "rescues_greedy": 4.84375,
+       "divers_sample": 33.03125,
+       "divers_greedy": 34.28125,
+       "score_sample": 11633.75,
+       "score_greedy": 13603.125
+      }
+     ],
+     "rounds_total": null,
+     "kind": "full",
+     "evals": [],
+     "gevals": [],
+     "process": [
+      {
+       "elapsed_s": 1156,
+       "cmd": "experiment_seaquest_diver_curriculum.py --agent attention --name sq_dc_att"
+      }
+     ],
+     "running": true,
+     "activity": "PPO update 250/4000 \u00b7 65.8M frames",
+     "checkpoint": {
+      "path": "runs/sq_dc_att/round0.pkl",
+      "label": "round 0 (latest)"
+     }
     }
    ],
    "status": "running",
-   "updated": 1790727008.5798674,
-   "video": null
+   "updated": 1790728125.4714866,
+   "video": {
+    "run": "sq_dc_att",
+    "label": "round 0 (latest)",
+    "ckpt": "runs/sq_dc_att/round0.pkl",
+    "greedy": false,
+    "has_actor": true,
+    "game": "seaquest",
+    "steps": 900,
+    "views": {
+     "real_base": {
+      "src": "media/experiment_seaquest_diver_curriculum__real_base.mp4",
+      "file": "experiment_seaquest_diver_curriculum__real_base.mp4",
+      "title": "REAL GAME \u00b7 base Seaquest",
+      "stats": {
+       "rescues": 2,
+       "lives_lost": 0,
+       "score": 3230,
+       "game_over": false
+      }
+     },
+     "real_gravity": {
+      "src": "media/experiment_seaquest_diver_curriculum__real_gravity.mp4",
+      "file": "experiment_seaquest_diver_curriculum__real_gravity.mp4",
+      "title": "REAL GAME \u00b7 gravity (held out)",
+      "stats": {
+       "rescues": 2,
+       "lives_lost": 2,
+       "score": 3770,
+       "game_over": false
+      }
+     }
+    }
+   }
   },
   {
    "module": "experiment_sparse_object_wm",
@@ -798,9 +936,9 @@
    "status": "evaluated",
    "updated": 1790691898.8883164,
    "video": {
-    "run": "sow_v1",
+    "run": "sow_s2",
     "label": "round 4 (latest)",
-    "ckpt": "runs/sow_v1/round4.pkl",
+    "ckpt": "runs/sow_s2/round4.pkl",
     "greedy": false,
     "has_actor": true,
     "game": "pong",
@@ -811,8 +949,8 @@
       "file": "experiment_sparse_object_wm__real_lazy.mp4",
       "title": "REAL GAME \u00b7 lazy_enemy",
       "points": {
-       "agent": 3,
-       "enemy": 3
+       "agent": 2,
+       "enemy": 4
       }
      },
      "wm_pong": {
@@ -820,8 +958,8 @@
       "file": "experiment_sparse_object_wm__wm_pong.mp4",
       "title": "WORLD MODEL \u00b7 Pong starts",
       "points": {
-       "agent": 10,
-       "enemy": 0
+       "agent": 11,
+       "enemy": 1
       }
      },
      "wm_lazy": {
@@ -829,7 +967,7 @@
       "file": "experiment_sparse_object_wm__wm_lazy.mp4",
       "title": "WORLD MODEL \u00b7 lazy_enemy starts",
       "points": {
-       "agent": 6,
+       "agent": 4,
        "enemy": 1
       }
      }
@@ -2717,9 +2855,9 @@
    "status": "goal_met",
    "updated": 1790691147.5159252,
    "video": {
-    "run": "oi_p01_s0",
+    "run": "oi_p01_s4",
     "label": "round 4 (latest)",
-    "ckpt": "runs/oi_p01_s0/round4.pkl",
+    "ckpt": "runs/oi_p01_s4/round4.pkl",
     "greedy": false,
     "has_actor": true,
     "game": "pong",
@@ -2730,7 +2868,7 @@
       "file": "experiment_observation_interventions__real_lazy.mp4",
       "title": "REAL GAME \u00b7 lazy_enemy",
       "points": {
-       "agent": 5,
+       "agent": 4,
        "enemy": 1
       }
      },
@@ -2739,7 +2877,7 @@
       "file": "experiment_observation_interventions__wm_pong.mp4",
       "title": "WORLD MODEL \u00b7 Pong starts",
       "points": {
-       "agent": 12,
+       "agent": 13,
        "enemy": 0
       }
      },
@@ -2748,7 +2886,7 @@
       "file": "experiment_observation_interventions__wm_lazy.mp4",
       "title": "WORLD MODEL \u00b7 lazy_enemy starts",
       "points": {
-       "agent": 5,
+       "agent": 6,
        "enemy": 0
       }
      }
