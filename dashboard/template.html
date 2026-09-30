@@ -459,7 +459,7 @@ function sqCard(e) {
     <div class="card-head">
       <div class="eyebrow">Seaquest · ${e.number != null ? "Experiment " + e.number : "Experiment"} · updated ${ago(e.updated)}</div>
       <span class="pill ${e.status}">${STATUS[e.status] || e.status}</span>
-      <h2>${esc(e.title.replace(/^Experiment S?\d+[^:]*:\s*/, ""))}</h2>
+      <h2>${esc(e.title.replace(/^Experiment [SW]?\d+[^:]*:\s*/, ""))}</h2>
       <div class="files">${esc(e.py)}${e.md ? " · " + esc(e.md) : " · no Markdown notes yet"}</div>
     </div>
     ${e.summary ? `<div class="summary md">${md(e.summary)}</div>` : ""}

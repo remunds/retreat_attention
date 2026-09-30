@@ -5,7 +5,8 @@ S2); held-out evaluation with `evaluate_gravity.py`.
 
 ## Summary
 
-**Goal met.** The object-attention agent trained with this curriculum (and random currents) on the
+**Model-free baseline** (trained on the real base game, so it does not count for the world-model goal;
+see W1, `experiment_seaquest_world_model.md`). **Criterion reached model-free.** The object-attention agent trained with this curriculum (and random currents) on the
 base game makes 8.38 rescues with 6 divers per game under the held-out `gravity` mod (all 32 games
 with at least 2); without currents it makes 7.22. The agents so far picked up 6-9 divers per game but almost never held 6 at once, so they rarely saw
 the rescue reward. Here, at the start of each game and after each lost life in training, the divers

@@ -322,5 +322,49 @@
   },
   "steps": 900,
   "fps": 20
+ },
+ "experiment_seaquest_world_model": {
+  "ckpt": "runs/sqwm_c/best.pkl",
+  "ckpt_mtime": 1790778955.075676,
+  "run": "sqwm_c",
+  "label": "selected checkpoint (evaluated)",
+  "rendered": 1790781015.9829648,
+  "greedy": true,
+  "has_actor": true,
+  "game": "seaquest",
+  "views": {
+   "real_base": {
+    "file": "experiment_seaquest_world_model__real_base.mp4",
+    "title": "REAL GAME \u00b7 base Seaquest",
+    "stats": {
+     "rescues": 2,
+     "lives_lost": 1,
+     "score": 4000,
+     "game_over": false
+    }
+   },
+   "real_gravity": {
+    "file": "experiment_seaquest_world_model__real_gravity.mp4",
+    "title": "REAL GAME \u00b7 gravity (held out)",
+    "stats": {
+     "rescues": 1,
+     "lives_lost": 0,
+     "score": 1100,
+     "game_over": false
+    }
+   },
+   "wm_base": {
+    "file": "experiment_seaquest_world_model__wm_base.mp4",
+    "title": "WORLD MODEL \u00b7 imagined from base-game starts",
+    "stats": {
+     "rescues": 4,
+     "lives_lost": 0,
+     "score": 4681,
+     "game_over": false
+    }
+   }
+  },
+  "steps": 900,
+  "fps": 20
  }
 }

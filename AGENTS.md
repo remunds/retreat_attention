@@ -4,7 +4,10 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 
 ## Goal and stopping criterion
 
-### Current goal: Seaquest with the `gravity` mod, **agent trained in a world model**
+### Goal (met): Seaquest with the `gravity` mod, **agent trained in a world model**
+
+Met by experiment W1 (`experiment_seaquest_world_model.md`, run `sqwm_c`): 8.88 rescues per game
+under `gravity`, all 32 games with at least 2, agent trained only in imagination.
 
 - The agent must be trained **entirely inside a learned world model** of the base Seaquest game,
   as in the Pong work: the world model is fitted on real base-game data, and the agent only ever

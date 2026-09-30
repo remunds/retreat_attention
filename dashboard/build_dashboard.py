@@ -117,9 +117,9 @@ def doc_summary(doc):
 def exp_number(*texts):
     """Experiment number from 'Experiment 3' (Pong) or 'Experiment S1' (Seaquest; returned as 'S1')."""
     for t in texts:
-        m = re.search(r"Experiment\s+(S?)(\d+)", t or "")
+        m = re.search(r"Experiment\s+([SW]?)(\d+)", t or "")
         if m:
-            return f"S{m.group(2)}" if m.group(1) else int(m.group(2))
+            return f"{m.group(1)}{m.group(2)}" if m.group(1) else int(m.group(2))
     return None
 
 
@@ -399,8 +399,8 @@ def collect():
         e["updated"] = max([r["mtime"] for r in e["runs"]] + [e["mtime"]])
         del e["md_runs"], e["flags"]
         out.append(e)
-    out.sort(key=lambda e: (e["game"] != "seaquest", e["number"] is None,
-                            int(str(e["number"]).lstrip("S")) if e["number"] is not None else 0, e["mtime"]))
+    out.sort(key=lambda e: (e["game"] != "seaquest", not str(e["number"]).startswith("W"), e["number"] is None,
+                            int(str(e["number"]).lstrip("SW")) if e["number"] is not None else 0, e["mtime"]))
     return out, unassigned
 
 

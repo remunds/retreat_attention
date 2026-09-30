@@ -5,7 +5,9 @@ base-game evaluation from `experiment_seaquest_ppo.py`), held-out evaluation wit
 
 ## Summary
 
-The Pong world-model method applied to Seaquest. An object-centric transformer world model is
+**Goal met with the world-model method:** 8.88 rescues per game under the held-out `gravity` mod (all
+32 games with at least 2), with an agent trained only in imagination. The Pong world-model method
+applied to Seaquest. An object-centric transformer world model is
 fitted on real base-game data, with one token per object slot plus global and action tokens. The
 object-attention agent is trained with PPO purely on imagined games from real start histories. Real
 interaction only collects world-model data and evaluates checkpoints. S5's diver curriculum shapes
@@ -121,18 +123,69 @@ Full runs with all fixes:
 ```
 CUDA_VISIBLE_DEVICES=4 uv run experiment_seaquest_world_model.py --name sqwm_b
 CUDA_VISIBLE_DEVICES=5 uv run experiment_seaquest_world_model.py --name sqwm_c --imag_len 64 --ppo_updates 400
+CUDA_VISIBLE_DEVICES=4 uv run experiment_seaquest_world_model.py --name sqwm_c_s1 --seed 1 --imag_len 64 --ppo_updates 400
 ```
+
+`sqwm_b` was stopped after round 2 (base-game rescues 0.09 per game) in favour of a second seed of
+the better `sqwm_c` configuration (`sqwm_c_s1`). Long imagined episodes (256 steps) let model errors
+accumulate further.
 
 ## Results
 
-Base-game evaluation after each round (32 real games from the normal start, sampled / greedy):
+Base-game evaluation after each round of `sqwm_c` (32 real games from the normal start, at most
+10,000 agent steps each, sampled / greedy actions). Each round adds 1.02M real steps (the replay
+keeps the last 5M):
 
-| run | round | rescues per game | divers per game | score |
+| round | real frames so far | rescues per game | divers per game | score |
 |---|---|---|---|---|
-| `sqwm_b` (imagined episodes <= 256 steps, 300 PPO updates / round) | 0 | 0.00 / 0.00 | 5.2 / 5.0 | 212 / 223 |
-| | 1 | 0.09 / 0.09 | 7.6 / 9.0 | 422 / 532 |
-| `sqwm_c` (imagined episodes <= 64 steps, 400 PPO updates / round) | 0 | 0.00 / 0.00 | 5.9 / 5.0 | 274 / 207 |
-| | 1 | **1.38 / 1.34** | 16.8 / 17.9 | 2909 / 2882 |
+| 0 | 4.1M | 0.00 / 0.00 | 5.9 / 5.0 | 274 / 207 |
+| 1 | 8.2M | 1.38 / 1.34 | 16.8 / 17.9 | 2909 / 2882 |
+| 2 | 12.3M | 3.53 / 3.50 | 31.2 / 30.7 | 10343 / 10248 |
+| 3 | 16.4M | 4.94 / 5.03 | 41.3 / 41.1 | 17881 / 18298 |
+| 4 | 20.5M | 4.94 / 5.34 | 45.4 / 43.9 | 16942 / 18955 |
+| 5 | 24.6M | 5.22 / 5.38 | 46.4 / 49.2 | 20569 / 21342 |
+| 6 | 28.7M | 10.97 / **12.12** (selected) | 74.3 / 81.4 | 53266 / 62934 |
+| 7 | 32.8M | 7.47 / 10.25 | 58.3 / 72.8 | 33704 / 54048 |
 
-After the fixes above, the agent trained only in imagination rescues 6 divers in the real base game.
-Runs in progress.
+**Held-out evaluation** of the selected checkpoint (round 6, greedy; `evaluate_gravity.py`, 32 full
+games per environment with the same seeds from `PRNGKey(12345)`, at most 27,000 agent steps per game),
+evaluated once:
+
+| environment | rescues per game | games with >= 2 | divers per game | score | steps per game |
+|---|---|---|---|---|---|
+| base game | 11.12 | 30 / 32 | 78.8 | 58396 | 6689 (2 games hit the step cap) |
+| **`gravity`** | **8.88** | **32 / 32** | 63.6 | 39425 | 4870 |
+
+```
+CUDA_VISIBLE_DEVICES=5 uv run evaluate_gravity.py --module experiment_seaquest_world_model --ckpt runs/sqwm_c/best.pkl
+```
+
+Rescues per game under `gravity`: 11, 6, 10, 16, 4, 5, 13, 11, 11, 16, 5, 4, 12, 3, 13, 14, 5, 7, 13, 12,
+5, 3, 4, 12, 18, 2, 5, 16, 4, 10, 4, 10 (minimum 2).
+
+**The goal is met with the world-model method**: the agent was trained only on imagined transitions
+of a world model fitted to base-game data, and with the held-out `gravity` mod it rescues 6 divers
+8.88 times per game on average, at least twice in every one of the 32 games.
+
+### Interpretation
+
+- **The world model has to be made unexploitable before imagination training works.** Each failure
+  above was the agent finding a way to collect imagined reward that the real game does not give:
+  event heads that fire without the matching state change, a countdown paid as pickups, uncalibrated
+  up-weighted events (false deaths, 7x too many pickups), and pickups without a diver nearby. The
+  fixes were to compute rewards from predicted *states* with evidence checks, to validate the reward
+  bookkeeping against the real game's counters (7 / 7 rescues, 43 / 44 pickups), to calibrate and sample
+  every up-weighted prediction, and to give the model relative positions for collisions. After that,
+  real rescues appeared within 2 rounds and reached 12 per base game.
+- **Short imagined episodes work better** (64 steps: 1.38 rescues per game after round 1; 256 steps:
+  0.09, the run was stopped), as model errors compound over long rollouts.
+- **Robustness to `gravity`:** the imagination-trained agent loses only about 20 % of its base-game
+  rescues under gravity (11.1 -> 8.9), versus about 47 % for the model-free S5 agents (15.7 -> 8.4).
+  No perturbation of the submarine's dynamics was used here. The imagined dynamics are noisier than
+  the real game (sampled spawns, deaths and diver counts, rounding), which may itself make the agent
+  more tolerant of small changes. Testing that would need an ablation.
+- **Data efficiency:** 32.8M real frames in total, versus 262M for the model-free S5 agent at a
+  similar base-game level.
+- Limitations: one seed evaluated so far (a second seed, `sqwm_c_s1`, is running); base-game
+  performance fluctuates between rounds (round 7 was worse than round 6); the diver curriculum and
+  the reward bookkeeping use knowledge of Seaquest's rules (how rescues and the diver countdown work).
