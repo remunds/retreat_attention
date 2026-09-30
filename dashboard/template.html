@@ -430,16 +430,20 @@ function sqRunsTable(e) {
 const SQ_VIEWS = [
   ["real_base", "Real game · base Seaquest", "the agent in the training game"],
   ["real_gravity", "Real game · gravity", "the agent in the held-out gravity game (evaluation only)"],
+  ["wm_base", "World model · imagination", "the agent inside its learned world model, started from real base-game histories (boxes = predicted objects)"],
 ];
 function sqVideoBlock(e) {
   const v = e.video;
   if (!v || v.error) return `<div class="novideo">${v && v.error ? "Videos could not be rendered: " + esc(v.error) : "No checkpoint yet, so no videos."}</div>`;
   const cells = SQ_VIEWS.filter(([k]) => v.views[k]).map(([k, name, desc]) => {
     const d = v.views[k], st = d.stats || {};
-    return `<figure class="vid"><figcaption><span class="vname">${name}</span><span class="caption">rescues ${st.rescues ?? "?"} · lives lost ${st.lives_lost ?? "?"} · score ${st.score ?? "?"}</span></figcaption>
+    const cap = k === "wm_base" ? `imagined rescues ${st.rescues ?? "?"} · imagined deaths ${st.lives_lost ?? "?"}`
+      : `rescues ${st.rescues ?? "?"} · lives lost ${st.lives_lost ?? "?"} · score ${st.score ?? "?"}`;
+    return `<figure class="vid"><figcaption><span class="vname">${name}</span><span class="caption">${cap}</span></figcaption>
       <video src="${esc(d.src)}" muted loop autoplay playsinline controls preload="metadata" title="${esc(desc)}"></video></figure>`;
   }).join("");
-  return `<div class="video sq"><div class="videos two">${cells}</div>
+  const nv = SQ_VIEWS.filter(([k]) => v.views[k]).length;
+  return `<div class="video sq"><div class="videos ${nv === 2 ? "two" : ""}">${cells}</div>
     <div class="caption">${esc(v.run)} · ${esc(v.label)} · ${v.greedy ? "greedy" : "sampling"} agent · ${v.steps ?? "?"} agent steps each, same seed</div></div>`;
 }
 function sqCard(e) {

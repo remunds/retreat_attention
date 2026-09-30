@@ -45,6 +45,11 @@ VIEWS = {
     "real_base": ("REAL GAME · base Seaquest", None),
     "real_gravity": ("REAL GAME · gravity (held out)", ["gravity"]),
 }
+# extra view for world-model experiments (modules with `wm_predict` and `build_model`)
+WM_VIEWS = {"wm_base": ("WORLD MODEL · imagined from base-game starts", None)}
+OBJ_COLORS = {"player": (187, 187, 53), "diver": (66, 72, 200), "shark": (92, 186, 92), "sub": (170, 170, 170),
+              "surface": (220, 220, 220), "torpedo": (187, 187, 53), "missile": (236, 120, 120)}
+SLOT_KIND = ["player"] + ["diver"] * 4 + ["shark"] * 12 + ["sub"] * 12 + ["surface"] + ["torpedo"] + ["missile"] * 4
 SCALE = 2
 W = 160 * SCALE  # 320
 HEAD = 80
@@ -93,6 +98,60 @@ def play(act, params, mods, steps, key):
     return np.asarray(frames), {k: np.asarray(v) for k, v in hud.items()}
 
 
+def draw_oc(frame):
+    """Draw a flattened object-centric frame (284,) as boxes (for imagined frames)."""
+    img = Image.new("RGB", (160, 210), (0, 0, 139))
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, 160, 45), fill=(60, 100, 190))  # sky / surface
+    d.rectangle((0, 195, 160, 210), fill=(150, 150, 150))  # sea floor
+    ox = float(frame[sc.OXYGEN_IDX]) / 64.0
+    d.rectangle((40, 200, 40 + int(80 * ox), 204), fill=(214, 214, 214))
+    o = 0
+    for start, n in ((0, 1), (8, 4), (40, 25), (240, 5)):
+        for i in range(n):
+            f = [float(frame[start + k * n + i]) for k in range(8)]
+            x, y, w, h, active = f[:5]
+            if active > 0:
+                d.rectangle((x, y, x + max(w, 2), y + max(h, 1)), fill=OBJ_COLORS[SLOT_KIND[o + i]])
+        o += n
+    return np.asarray(img)
+
+
+def imagine(mod, ck, act, steps, key):
+    """The agent inside its world model, started from a real base-game history; restarts after a death."""
+    model = mod.build_model(ck["cfg"])
+    env = ObjectCentricWrapper(AtariWrapper(jaxatari.make("seaquest")), frame_stack_size=sc.FRAME_STACK,
+                               frame_skip=sc.FRAME_SKIP)
+    k_reset, k_warm, k_run = jax.random.split(key, 3)
+    obs, st = env.reset(k_reset)
+
+    def warm(c, k):  # a real start history: the agent plays the real game for a while
+        obs, st = c
+        obs, st, *_ = env.step(st, act(ck["ac_params"], obs, k))
+        return (obs, st), obs
+
+    _, starts = jax.lax.scan(warm, (obs, st), jax.random.split(k_warm, 300))
+    starts = starts[60::20]
+
+    def body(c, k):
+        stack, i = c
+        k_a, k_w = jax.random.split(k)
+        a = act(ck["ac_params"], stack, k_a)
+        nxt, score_d, rescue, died = mod.wm_predict(model, ck["wm_params"], stack[None], a[None], k_w)
+        new = jnp.concatenate([stack[1:], nxt], 0)
+        i2 = jnp.where(died[0], (i + 1) % starts.shape[0], i)
+        new = jnp.where(died[0], starts[i2], new)
+        hud = dict(divers=nxt[0, sc.DIVERS_IDX], rescues=rescue[0], oxygen=nxt[0, sc.OXYGEN_IDX],
+                   lives=nxt[0, sc.LIVES_IDX], score=nxt[0, sc.SCORE_IDX], done=died[0], action=a)
+        return (new, i2), (nxt[0], hud)
+
+    _, (frames, hud) = jax.jit(lambda s0, ks: jax.lax.scan(body, (s0, jnp.array(0)), ks))(starts[0], jax.random.split(k_run, steps))
+    hud = {k: np.asarray(v) for k, v in hud.items()}
+    hud["rescues"] = np.cumsum(hud["rescues"])  # imagined rescues so far
+    hud["lives"] = 3 - np.cumsum(hud["done"])  # count imagined deaths (restart from a real history)
+    return np.stack([draw_oc(f) for f in np.asarray(frames)]), hud
+
+
 def draw(frame, hud, t, title, subtitle, flash, fonts):
     f_small, f_bold, f_big = fonts
     img = Image.new("RGB", (W, H), BG)
@@ -122,13 +181,12 @@ def write_video(frames, hud, out, title, subtitle, fps):
     flash, left = None, 0
     rescues = lives_lost = 0
     for t in range(len(frames)):
-        if t > 0 and not hud["done"][t]:
-            if hud["rescues"][t] > hud["rescues"][t - 1]:
-                rescues += 1
-                flash, left = ("6 DIVERS RESCUED", GOOD), 20
-            elif hud["lives"][t] < hud["lives"][t - 1]:
-                lives_lost += 1
-                flash, left = ("LIFE LOST", BAD), 12
+        if t > 0 and hud["rescues"][t] > hud["rescues"][t - 1]:
+            rescues += 1
+            flash, left = ("6 DIVERS RESCUED", GOOD), 20
+        elif t > 0 and hud["lives"][t] < hud["lives"][t - 1]:
+            lives_lost += 1
+            flash, left = ("LIFE LOST", BAD), 12
         left = max(0, left - 1)
         writer.send(draw(frames[t], hud, t, title, subtitle, flash if left else None, fonts).tobytes())
     writer.close()
@@ -142,9 +200,15 @@ def render(module, ckpt, out_prefix, steps=900, fps=20, seed=0, label=None, view
     who = "greedy agent" if greedy else "sampling agent"
     meta = dict(greedy=greedy, has_actor=True, game="seaquest", views={})
     key = jax.random.PRNGKey(seed)
+    if hasattr(mod, "wm_predict") and "wm_params" in ck:
+        views = tuple(views) + tuple(WM_VIEWS)
     for v in views:
-        title, mods = VIEWS[v]
-        frames, hud = play(act, ck["ac_params"], mods, steps, key)  # same seed for both views
+        if v in WM_VIEWS:
+            title = WM_VIEWS[v][0]
+            frames, hud = imagine(mod, ck, act, steps, key)
+        else:
+            title, mods = VIEWS[v]
+            frames, hud = play(act, ck["ac_params"], mods, steps, key)  # same seed for both real views
         out = f"{out_prefix}__{v}.mp4"
         stats = write_video(frames, hud, out, title, f"{label or ckpt} · {who}", fps)
         meta["views"][v] = dict(file=os.path.basename(out), title=title, stats=stats)

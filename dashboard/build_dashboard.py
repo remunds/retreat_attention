@@ -462,7 +462,7 @@ def update_videos(experiments, force=False):
         prefix = os.path.join(MEDIA, e["module"])
         prev = manifest.get(e["module"])
         renderer = render_seaquest if e.get("game") == "seaquest" else render_rollout
-        have = prev is not None and set(prev.get("views", {})) == set(renderer.VIEWS) and all(
+        have = prev is not None and set(renderer.VIEWS) <= set(prev.get("views", {})) and all(
             os.path.exists(os.path.join(MEDIA, d["file"])) for d in prev["views"].values())
         fresh = have and prev["ckpt"] == ck["path"] and abs(prev["ckpt_mtime"] - ck_mtime) < 1
         if time.time() - ck_mtime < 30:  # checkpoint still being written: keep the old videos for now

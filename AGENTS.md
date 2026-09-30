@@ -4,12 +4,18 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 
 ## Goal and stopping criterion
 
-### Goal (met): Seaquest with the `gravity` mod
+### Current goal: Seaquest with the `gravity` mod, **agent trained in a world model**
 
-Met by experiment S5 (`experiment_seaquest_diver_curriculum.md`): 8.38 rescues per game under
-`gravity`, all 32 games with at least 2.
+- The agent must be trained **entirely inside a learned world model** of the base Seaquest game,
+  as in the Pong work: the world model is fitted on real base-game data, and the agent only ever
+  learns from imagined transitions. Real interaction is only used to collect data for the world
+  model (and for base-game evaluation / model selection).
+- Criterion as below: with the held-out `gravity` mod, >= 2 successful rescues (6 divers) per game
+  on average over at least 10 games.
+- Model-free agents trained on the real environment (S1-S5) do not count. They are baselines. S5
+  met the criterion model-free (8.38 rescues per game), which is not the requested method.
 
-- The task is finished **only** when an agent trained on the **base Seaquest game** (JAXAtari
+- The task is finished **only** when an agent trained (in a world model) on the **base Seaquest game** (JAXAtari
   `seaquest`, object-centric inputs) is robust to the JAXAtari Seaquest **`gravity`** mod
   (`GravityMod`): with the mod active, the agent must **collect 6 divers and surface with them at
   least 2 times per game** (the game's `successful_rescues` counter reaches 2 or more), on average
