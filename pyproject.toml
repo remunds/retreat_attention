@@ -3,8 +3,19 @@ name = "retreat"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "imageio>=2.38.0",
+    "imageio-ffmpeg>=0.6.0",
     "jaxatari",
 ]
 
 [tool.uv.sources]
 jaxatari = { git = "https://github.com/k4ntz/JAXAtari.git" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
