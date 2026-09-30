@@ -38,6 +38,10 @@ the URL above, with every video as a supporting file
   while a run is in progress), `wm_only.json`, and `lazy_enemy_eval.json` from
   `evaluate_lazy_enemy.py` (also in subdirectories of a run, or next to a checkpoint in `runs/`
   selected by `select_robust_checkpoint.py`).
+- Seaquest experiments show two videos (the agent in the real base game and in the held-out `gravity`
+  game, same seed; `dashboard/render_seaquest.py`) of the best held-out-evaluated checkpoint
+  (`gravity_eval.json` from `evaluate_gravity.py`), or else of the newest checkpoint. Their cards show
+  rescues per game (goal: >= 2 with `gravity`) instead of Pong final scores.
 - The three videos show the newest checkpoint (latest `round*.pkl`, else `best.pkl`, else
   `wm_only.pkl`) of the experiment's most recently updated run: (1) the actor in the real
   `lazy_enemy` game, with the world model's gates on the real history, (2) the actor inside the

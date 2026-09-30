@@ -222,11 +222,11 @@
   "fps": 15
  },
  "experiment_seaquest_ppo": {
-  "ckpt": "runs/sq_ppo_b/round2.pkl",
-  "ckpt_mtime": 1790724018.9868708,
+  "ckpt": "runs/sq_ppo_b/best.pkl",
+  "ckpt_mtime": 1790723287.252636,
   "run": "sq_ppo_b",
-  "label": "round 2 (latest)",
-  "rendered": 1790728188.9473352,
+  "label": "selected checkpoint (evaluated)",
+  "rendered": 1790733396.1839154,
   "greedy": false,
   "has_actor": true,
   "game": "seaquest",
@@ -236,8 +236,8 @@
     "title": "REAL GAME \u00b7 base Seaquest",
     "stats": {
      "rescues": 0,
-     "lives_lost": 4,
-     "score": 180,
+     "lives_lost": 6,
+     "score": 160,
      "game_over": true
     }
    },
@@ -247,7 +247,7 @@
     "stats": {
      "rescues": 0,
      "lives_lost": 5,
-     "score": 180,
+     "score": 200,
      "game_over": true
     }
    }
@@ -290,12 +290,12 @@
   "fps": 20
  },
  "experiment_seaquest_diver_curriculum": {
-  "ckpt": "runs/sq_dc_att/round0.pkl",
-  "ckpt_mtime": 1790728122.0884736,
+  "ckpt": "runs/sq_dc_att/best.pkl",
+  "ckpt_mtime": 1790731512.5968592,
   "run": "sq_dc_att",
-  "label": "round 0 (latest)",
-  "rendered": 1790728236.570431,
-  "greedy": false,
+  "label": "selected checkpoint (evaluated)",
+  "rendered": 1790733420.4398406,
+  "greedy": true,
   "has_actor": true,
   "game": "seaquest",
   "views": {
@@ -305,7 +305,7 @@
     "stats": {
      "rescues": 2,
      "lives_lost": 0,
-     "score": 3230,
+     "score": 2860,
      "game_over": false
     }
    },
@@ -314,8 +314,8 @@
     "title": "REAL GAME \u00b7 gravity (held out)",
     "stats": {
      "rescues": 2,
-     "lives_lost": 2,
-     "score": 3770,
+     "lives_lost": 0,
+     "score": 2990,
      "game_over": false
     }
    }

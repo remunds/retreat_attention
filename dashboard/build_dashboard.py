@@ -452,6 +452,11 @@ def update_videos(experiments, force=False):
             continue
         run = max(cands, key=lambda r: os.path.getmtime(os.path.join(ROOT, r["checkpoint"]["path"])))
         ck = run["checkpoint"]
+        gev = [(ev, r) for r in e["runs"] for ev in r.get("gevals", []) if ev.get("ckpt")
+               and os.path.exists(os.path.join(ROOT, ev["ckpt"]))]
+        if e.get("game") == "seaquest" and gev:  # show the best held-out-evaluated (selected) checkpoint
+            ev, run = max(gev, key=lambda x: x[0]["gravity_rescues"] or 0)
+            ck = dict(path=ev["ckpt"], label="selected checkpoint (evaluated)")
         ck_path = os.path.join(ROOT, ck["path"])
         ck_mtime = os.path.getmtime(ck_path)
         prefix = os.path.join(MEDIA, e["module"])

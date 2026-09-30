@@ -1,0 +1,16 @@
+config: {'name': 'sq_ppo_a', 'seed': 0, 'num_envs': 512, 'T': 128, 'updates': 3000, 'epochs': 4, 'minibatches': 8, 'lr': 0.00025, 'gamma': 0.995, 'lam': 0.95, 'clip': 0.2, 'ent_coef': 0.01, 'vf_coef': 0.5, 'max_grad_norm': 0.5, 'diver_bonus': 1.0, 'rescue_bonus': 10.0, 'life_penalty': 0.0, 'surface_penalty': 0.5, 'eval_every': 250, 'eval_games': 32, 'eval_max_steps': 20000, 'experiment': 'experiment_seaquest_ppo', 'game': 'seaquest'}
+  upd     0 frames     0.3M divers=1.459 ent=2.715 env_r=9.609 games_over=0.000 pg=0.098 rescues=0.000 shaped_r=0.852 v=32.663 (22s)
+  upd    25 frames     6.8M divers=1.824 ent=2.601 env_r=0.000 games_over=195.000 pg=-0.002 rescues=0.000 shaped_r=0.714 v=0.046 (106s)
+  upd    50 frames    13.4M divers=1.822 ent=2.531 env_r=0.000 games_over=223.000 pg=-0.001 rescues=0.000 shaped_r=0.702 v=0.018 (173s)
+  upd    75 frames    19.9M divers=1.713 ent=2.447 env_r=0.000 games_over=279.000 pg=-0.000 rescues=0.000 shaped_r=0.580 v=0.021 (240s)
+  upd   100 frames    26.5M divers=1.750 ent=2.441 env_r=0.000 games_over=255.000 pg=-0.001 rescues=0.000 shaped_r=0.651 v=0.012 (307s)
+  upd   125 frames    33.0M divers=1.742 ent=2.369 env_r=0.000 games_over=260.000 pg=-0.001 rescues=0.000 shaped_r=0.622 v=0.012 (373s)
+  upd   150 frames    39.6M divers=1.617 ent=2.494 env_r=0.000 games_over=305.000 pg=-0.002 rescues=0.000 shaped_r=0.484 v=0.007 (440s)
+  upd   175 frames    46.1M divers=1.594 ent=2.461 env_r=0.273 games_over=298.000 pg=-0.001 rescues=0.000 shaped_r=0.505 v=0.011 (507s)
+  upd   200 frames    52.7M divers=0.373 ent=1.191 env_r=25.977 games_over=104.000 pg=0.001 rescues=0.000 shaped_r=0.438 v=0.126 (574s)
+  upd   225 frames    59.2M divers=0.104 ent=1.110 env_r=43.594 games_over=83.000 pg=-0.009 rescues=0.000 shaped_r=0.519 v=0.159 (641s)
+=== round 0 === update 250: base-game eval sample rescues 0.00 divers 1.5 score 233 | greedy rescues 0.00 divers 1.4 score 279
+  upd   250 frames    65.8M divers=0.229 ent=1.530 env_r=45.273 games_over=88.000 pg=-0.011 rescues=0.000 shaped_r=0.646 v=0.090 (800s)
+  upd   275 frames    72.4M divers=0.416 ent=1.831 env_r=46.914 games_over=81.000 pg=-0.013 rescues=0.000 shaped_r=0.851 v=0.044 (868s)
+  upd   300 frames    78.9M divers=0.818 ent=1.939 env_r=44.648 games_over=89.000 pg=-0.019 rescues=0.000 shaped_r=1.205 v=0.031 (947s)
+  upd   325 frames    85.5M divers=1.164 ent=1.920 env_r=49.961 games_over=101.000 pg=-0.015 rescues=0.002 shaped_r=1.616 v=0.041 (1027s)

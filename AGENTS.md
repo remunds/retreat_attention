@@ -4,7 +4,10 @@ Guidelines for coding agents working in this repository. See `project.md` for th
 
 ## Goal and stopping criterion
 
-### Current goal: Seaquest with the `gravity` mod
+### Goal (met): Seaquest with the `gravity` mod
+
+Met by experiment S5 (`experiment_seaquest_diver_curriculum.md`): 8.38 rescues per game under
+`gravity`, all 32 games with at least 2.
 
 - The task is finished **only** when an agent trained on the **base Seaquest game** (JAXAtari
   `seaquest`, object-centric inputs) is robust to the JAXAtari Seaquest **`gravity`** mod
