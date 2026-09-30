@@ -6,7 +6,7 @@ base-game evaluation from `experiment_seaquest_ppo.py`), held-out evaluation wit
 ## Summary
 
 **Goal met with the world-model method:** 8.88 rescues per game under the held-out `gravity` mod (all
-32 games with at least 2), with an agent trained only in imagination. The Pong world-model method
+32 games with at least 2; second seed 3.47, 30 / 32), with an agent trained only in imagination. The Pong world-model method
 applied to Seaquest. An object-centric transformer world model is
 fitted on real base-game data, with one token per object slot plus global and action tokens. The
 object-attention agent is trained with PPO purely on imagined games from real start histories. Real
@@ -163,9 +163,34 @@ CUDA_VISIBLE_DEVICES=5 uv run evaluate_gravity.py --module experiment_seaquest_w
 Rescues per game under `gravity`: 11, 6, 10, 16, 4, 5, 13, 11, 11, 16, 5, 4, 12, 3, 13, 14, 5, 7, 13, 12,
 5, 3, 4, 12, 18, 2, 5, 16, 4, 10, 4, 10 (minimum 2).
 
+**Second seed** (`sqwm_c_s1`, same configuration, seed 1), base-game evaluation per round:
+
+| round | rescues per game | divers per game | score |
+|---|---|---|---|
+| 0 | 0.00 / 0.00 | 4.8 / 5.0 | 154 / 162 |
+| 1 | 0.03 / 0.06 | 6.4 / 6.8 | 342 / 376 |
+| 2 | 0.22 / 0.06 | 8.8 / 12.6 | 859 / 1232 |
+| 3 | 1.47 / 1.44 | 19.2 / 20.7 | 3577 / 3531 |
+| 4 | 1.97 / 2.09 | 26.0 / 26.7 | 4612 / 5039 |
+| 5 | 5.44 / 5.41 | 49.3 / 48.0 | 20548 / 21102 |
+| 6 | 7.94 / 7.97 | 58.5 / 58.6 | 35744 / 36713 |
+| 7 | **12.19** / 12.03 (selected, sampled) | 82.8 / 81.4 | 66107 / 65359 |
+
+Held-out evaluation of its selected checkpoint (same protocol):
+
+| environment | rescues per game | games with >= 2 | divers per game | score |
+|---|---|---|---|---|
+| base game | 7.88 | 32 / 32 | 58.8 | 35478 |
+| **`gravity`** | **3.47** | 30 / 32 | 49.0 | 11878 |
+
+```
+CUDA_VISIBLE_DEVICES=4 uv run evaluate_gravity.py --module experiment_seaquest_world_model --ckpt runs/sqwm_c_s1/best.pkl
+```
+
 **The goal is met with the world-model method**: the agent was trained only on imagined transitions
 of a world model fitted to base-game data, and with the held-out `gravity` mod it rescues 6 divers
-8.88 times per game on average, at least twice in every one of the 32 games.
+8.88 times per game on average, at least twice in every one of the 32 games (seed 0). The second
+seed also meets the criterion (3.47 rescues per game, 30 / 32 games with at least 2).
 
 ### Interpretation
 
@@ -179,13 +204,14 @@ of a world model fitted to base-game data, and with the held-out `gravity` mod i
   real rescues appeared within 2 rounds and reached 12 per base game.
 - **Short imagined episodes work better** (64 steps: 1.38 rescues per game after round 1; 256 steps:
   0.09, the run was stopped), as model errors compound over long rollouts.
-- **Robustness to `gravity`:** the imagination-trained agent loses only about 20 % of its base-game
-  rescues under gravity (11.1 -> 8.9), versus about 47 % for the model-free S5 agents (15.7 -> 8.4).
-  No perturbation of the submarine's dynamics was used here. The imagined dynamics are noisier than
-  the real game (sampled spawns, deaths and diver counts, rounding), which may itself make the agent
-  more tolerant of small changes. Testing that would need an ablation.
+- **Robustness to `gravity`:** seed 0 loses about 20 % of its base-game rescues under gravity
+  (11.1 -> 8.9), seed 1 about 56 % (7.9 -> 3.5); the model-free S5 agents lost about 47 %. So there is
+  no consistent robustness advantage from training in imagination: both seeds pass because they rescue
+  reliably in the base game, and the size of the gravity penalty varies from seed to seed. No
+  perturbation of the submarine's dynamics was used here.
 - **Data efficiency:** 32.8M real frames in total, versus 262M for the model-free S5 agent at a
   similar base-game level.
-- Limitations: one seed evaluated so far (a second seed, `sqwm_c_s1`, is running); base-game
-  performance fluctuates between rounds (round 7 was worse than round 6); the diver curriculum and
+- Limitations: two seeds; base-game performance fluctuates between rounds (seed 0: round 7 was worse
+  than round 6), and the selected checkpoint's held-out base-game score is lower than at selection
+  (seed 1: 12.2 during training vs 7.9 on the held-out seeds with longer games); the diver curriculum and
   the reward bookkeeping use knowledge of Seaquest's rules (how rescues and the diver countdown work).

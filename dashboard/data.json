@@ -1,7 +1,7 @@
 {
- "generated": 1790781034.50685,
- "generated_iso": "2026-09-30T17:10:34",
- "git": "a8ce8a5 Seaquest W1: calibrated event/existence/diver sampling, evidence-grounded rewards, relative features; first real rescues from imagination (1.38/game)",
+ "generated": 1790783110.609183,
+ "generated_iso": "2026-09-30T17:45:10",
+ "git": "567d9d0 Seaquest goal met with the world-model method: W1 agent (trained only in imagination) makes 8.88 rescues per game under gravity",
  "target": 10.0,
  "sq_target": 2.0,
  "experiments": [
@@ -12,11 +12,11 @@
    "game": "seaquest",
    "title": "Experiment W1: Seaquest agent trained entirely in a learned object-centric world model",
    "number": "W1",
-   "summary": "**Goal met with the world-model method:** 8.88 rescues per game under the held-out `gravity` mod (all\n32 games with at least 2), with an agent trained only in imagination. The Pong world-model method\napplied to Seaquest. An object-centric transformer world model is\nfitted on real base-game data, with one token per object slot plus global and action tokens. The\nobject-attention agent is trained with PPO purely on imagined games from real start histories. Real\ninteraction only collects world-model data and evaluates checkpoints. S5's diver curriculum shapes\nthe real data and the imagined start states.",
+   "summary": "**Goal met with the world-model method:** 8.88 rescues per game under the held-out `gravity` mod (all\n32 games with at least 2; second seed 3.47, 30 / 32), with an agent trained only in imagination. The Pong world-model method\napplied to Seaquest. An object-centric transformer world model is\nfitted on real base-game data, with one token per object slot plus global and action tokens. The\nobject-attention agent is trained with PPO purely on imagined games from real start histories. Real\ninteraction only collects world-model data and evaluates checkpoints. S5's diver curriculum shapes\nthe real data and the imagined start states.",
    "summary_source": "md",
    "goal": "An agent trained **inside a learned world model** of the base Seaquest game that, with the held-out\n`gravity` mod, collects 6 divers and surfaces with them at least twice per game\n(`successful_rescues` >= 2), on average over at least 10 games.",
    "question": "Can an object-centric world model of Seaquest (35 object slots, stochastic spawns, oxygen, divers,\nsurfacing and death rules) be accurate enough that an agent trained only in imagination learns the\nlong-horizon rescue behaviour, and is that agent robust to `gravity`?",
-   "results": "Base-game evaluation after each round of `sqwm_c` (32 real games from the normal start, at most\n10,000 agent steps each, sampled / greedy actions). Each round adds 1.02M real steps (the replay\nkeeps the last 5M):\n\n| round | real frames so far | rescues per game | divers per game | score |\n|---|---|---|---|---|\n| 0 | 4.1M | 0.00 / 0.00 | 5.9 / 5.0 | 274 / 207 |\n| 1 | 8.2M | 1.38 / 1.34 | 16.8 / 17.9 | 2909 / 2882 |\n| 2 | 12.3M | 3.53 / 3.50 | 31.2 / 30.7 | 10343 / 10248 |\n| 3 | 16.4M | 4.94 / 5.03 | 41.3 / 41.1 | 17881 / 18298 |\n| 4 | 20.5M | 4.94 / 5.34 | 45.4 / 43.9 | 16942 / 18955 |\n| 5 | 24.6M | 5.22 / 5.38 | 46.4 / 49.2 | 20569 / 21342 |\n| 6 | 28.7M | 10.97 / **12.12** (selected) | 74.3 / 81.4 | 53266 / 62934 |\n| 7 | 32.8M | 7.47 / 10.25 | 58.3 / 72.8 | 33704 / 54048 |\n\n**Held-out evaluation** of the selected checkpoint (round 6, greedy; `evaluate_gravity.py`, 32 full\ngames per environment with the same seeds from `PRNGKey(12345)`, at most 27,000 agent steps per game),\nevaluated once:\n\n| environment | rescues per game | games with >= 2 | divers per game | score | steps per game |\n|---|---|---|---|---|---|\n| base game | 11.12 | 30 / 32 | 78.8 | 58396 | 6689 (2 games hit the step cap) |\n| **`gravity`** | **8.88** | **32 / 32** | 63.6 | 39425 | 4870 |\n\n```\nCUDA_VISIBLE_DEVICES=5 uv run evaluate_gravity.py --module experiment_seaquest_world_model --ckpt runs/sqwm_c/best.pkl\n```\n\nRescues per game under `gravity`: 11, 6, 10, 16, 4, 5, 13, 11, 11, 16, 5, 4, 12, 3, 13, 14, 5, 7, 13, 12,\n5, 3, 4, 12, 18, 2, 5, 16, 4, 10, 4, 10 (minimum 2).\n\n**The goal is met with the world-model method**: the agent was trained only on imagined transitions\nof a world model fitted to base-game data, and with the held-out `gravity` mod it rescues 6 divers\n8.88 times per game on average, at least twice in every one of the 32 games.\n\n### Interpretation\n\n- **The world model has to be made unexploitable before imagination training works.** Each failure\n  above was the agent finding a way to collect imagined reward that the real game does not give:\n  event heads that fire without the matching state change, a countdown paid as pickups, uncalibrated\n  up-weighted events (false deaths, 7x too many pickups), and pickups without a diver nearby. The\n  fixes were to compute rewards from predicted *states* with evidence checks, to validate the reward\n  bookkeeping against the real game's counters (7 / 7 rescues, 43 / 44 pickups), to calibrate and sample\n  every up-weighted prediction, and to give the model relative positions for collisions. After that,\n  real rescues appeared within 2 rounds and reached 12 per base game.\n- **Short imagined episodes work better** (64 steps: 1.38 rescues per game after round 1; 256 steps:\n  0.09, the run was stopped), as model errors compound over long rollouts.\n- **Robustness to `gravity`:** the imagination-trained agent loses only about 20 % of its base-game\n  rescues under gravity (11.1 -> 8.9), versus about 47 % for the model-free S5 agents (15.7 -> 8.4).\n  No perturbation of the submarine's dynamics was used here. The imagined dynamics are noisier than\n  the real game (sampled spawns, deaths and diver counts, rounding), which may itself make the agent\n  more tolerant of small changes. Testing that would need an ablation.\n- **Data efficiency:** 32.8M real frames in total, versus 262M for the model-free S5 agent at a\n  similar base-game level.\n- Limitations: one seed evaluated so far (a second seed, `sqwm_c_s1`, is running); base-game\n  performance fluctuates between rounds (round 7 was worse than round 6); the diver curriculum and\n  the reward bookkeeping use knowledge of Seaquest's rules (how rescues and the diver countdown work).",
+   "results": "Base-game evaluation after each round of `sqwm_c` (32 real games from the normal start, at most\n10,000 agent steps each, sampled / greedy actions). Each round adds 1.02M real steps (the replay\nkeeps the last 5M):\n\n| round | real frames so far | rescues per game | divers per game | score |\n|---|---|---|---|---|\n| 0 | 4.1M | 0.00 / 0.00 | 5.9 / 5.0 | 274 / 207 |\n| 1 | 8.2M | 1.38 / 1.34 | 16.8 / 17.9 | 2909 / 2882 |\n| 2 | 12.3M | 3.53 / 3.50 | 31.2 / 30.7 | 10343 / 10248 |\n| 3 | 16.4M | 4.94 / 5.03 | 41.3 / 41.1 | 17881 / 18298 |\n| 4 | 20.5M | 4.94 / 5.34 | 45.4 / 43.9 | 16942 / 18955 |\n| 5 | 24.6M | 5.22 / 5.38 | 46.4 / 49.2 | 20569 / 21342 |\n| 6 | 28.7M | 10.97 / **12.12** (selected) | 74.3 / 81.4 | 53266 / 62934 |\n| 7 | 32.8M | 7.47 / 10.25 | 58.3 / 72.8 | 33704 / 54048 |\n\n**Held-out evaluation** of the selected checkpoint (round 6, greedy; `evaluate_gravity.py`, 32 full\ngames per environment with the same seeds from `PRNGKey(12345)`, at most 27,000 agent steps per game),\nevaluated once:\n\n| environment | rescues per game | games with >= 2 | divers per game | score | steps per game |\n|---|---|---|---|---|---|\n| base game | 11.12 | 30 / 32 | 78.8 | 58396 | 6689 (2 games hit the step cap) |\n| **`gravity`** | **8.88** | **32 / 32** | 63.6 | 39425 | 4870 |\n\n```\nCUDA_VISIBLE_DEVICES=5 uv run evaluate_gravity.py --module experiment_seaquest_world_model --ckpt runs/sqwm_c/best.pkl\n```\n\nRescues per game under `gravity`: 11, 6, 10, 16, 4, 5, 13, 11, 11, 16, 5, 4, 12, 3, 13, 14, 5, 7, 13, 12,\n5, 3, 4, 12, 18, 2, 5, 16, 4, 10, 4, 10 (minimum 2).\n\n**Second seed** (`sqwm_c_s1`, same configuration, seed 1), base-game evaluation per round:\n\n| round | rescues per game | divers per game | score |\n|---|---|---|---|\n| 0 | 0.00 / 0.00 | 4.8 / 5.0 | 154 / 162 |\n| 1 | 0.03 / 0.06 | 6.4 / 6.8 | 342 / 376 |\n| 2 | 0.22 / 0.06 | 8.8 / 12.6 | 859 / 1232 |\n| 3 | 1.47 / 1.44 | 19.2 / 20.7 | 3577 / 3531 |\n| 4 | 1.97 / 2.09 | 26.0 / 26.7 | 4612 / 5039 |\n| 5 | 5.44 / 5.41 | 49.3 / 48.0 | 20548 / 21102 |\n| 6 | 7.94 / 7.97 | 58.5 / 58.6 | 35744 / 36713 |\n| 7 | **12.19** / 12.03 (selected, sampled) | 82.8 / 81.4 | 66107 / 65359 |\n\nHeld-out evaluation of its selected checkpoint (same protocol):\n\n| environment | rescues per game | games with >= 2 | divers per game | score |\n|---|---|---|---|---|\n| base game | 7.88 | 32 / 32 | 58.8 | 35478 |\n| **`gravity`** | **3.47** | 30 / 32 | 49.0 | 11878 |\n\n```\nCUDA_VISIBLE_DEVICES=4 uv run evaluate_gravity.py --module experiment_seaquest_world_model --ckpt runs/sqwm_c_s1/best.pkl\n```\n\n**The goal is met with the world-model method**: the agent was trained only on imagined transitions\nof a world model fitted to base-game data, and with the held-out `gravity` mod it rescues 6 divers\n8.88 times per game on average, at least twice in every one of the 32 games (seed 0). The second\nseed also meets the criterion (3.47 rescues per game, 30 / 32 games with at least 2).\n\n### Interpretation\n\n- **The world model has to be made unexploitable before imagination training works.** Each failure\n  above was the agent finding a way to collect imagined reward that the real game does not give:\n  event heads that fire without the matching state change, a countdown paid as pickups, uncalibrated\n  up-weighted events (false deaths, 7x too many pickups), and pickups without a diver nearby. The\n  fixes were to compute rewards from predicted *states* with evidence checks, to validate the reward\n  bookkeeping against the real game's counters (7 / 7 rescues, 43 / 44 pickups), to calibrate and sample\n  every up-weighted prediction, and to give the model relative positions for collisions. After that,\n  real rescues appeared within 2 rounds and reached 12 per base game.\n- **Short imagined episodes work better** (64 steps: 1.38 rescues per game after round 1; 256 steps:\n  0.09, the run was stopped), as model errors compound over long rollouts.\n- **Robustness to `gravity`:** seed 0 loses about 20 % of its base-game rescues under gravity\n  (11.1 -> 8.9), seed 1 about 56 % (7.9 -> 3.5); the model-free S5 agents lost about 47 %. So there is\n  no consistent robustness advantage from training in imagination: both seeds pass because they rescue\n  reliably in the base game, and the size of the gravity penalty varies from seed to seed. No\n  perturbation of the submarine's dynamics was used here.\n- **Data efficiency:** 32.8M real frames in total, versus 262M for the model-free S5 agent at a\n  similar base-game level.\n- Limitations: two seeds; base-game performance fluctuates between rounds (seed 0: round 7 was worse\n  than round 6), and the selected checkpoint's held-out base-game score is lower than at selection\n  (seed 1: 12.2 during training vs 7.9 on the held-out seeds with longer games); the diver curriculum and\n  the reward bookkeeping use knowledge of Seaquest's rules (how rescues and the diver countdown work).",
    "setup": "- World model: tokens = 35 object slots (4 frames of position, existence, orientation, visual id,\n  plus last velocity), 1 global token (oxygen, divers, lives over 4 frames), 1 action token, learned\n  slot embeddings; 4 pre-LayerNorm transformer blocks (d = 128, 4 heads). Heads per slot: existence\n  (BCE), displacement for objects that stay (MSE, units of 8 px), absolute position for spawns, and\n  orientation and visual id (CE). Global head: oxygen (MSE), divers carried and lives (CE), score\n  gain (symlog MSE), rescue and death events (BCE, positives weighted 5x). Imagination samples spawns\n  and decodes the rest deterministically; positions are rounded.\n- Deaths: the terminal event is the start of the death animation (collision or no oxygen).\n  Death-animation frames are excluded from world-model training.\n- Real data per round: 512 base games x 2000 steps with the diver curriculum (probability 0.5 at\n  game start / new life). Transitions changed by a gift are excluded. The replay keeps the last 5\n  rounds (5M transitions). World model: 20k updates per round (batch 512, AdamW 3e-4), continued\n  across rounds.\n- Imagination: 2048 imagined games, 64-step PPO rollouts, 300 PPO updates per round; episodes start\n  from 200k real 4-frame histories (with probability 0.5 the divers carried are set to k ~ U{0..6})\n  and end at a predicted death or after 256 steps (value bootstrap). Reward: score gain / 100 +\n  2 x divers picked up + 10 x rescue + potential shaping (as S3/S5).\n- 8 rounds. Selection: base-game rescues (32 games from the normal start), then score. `gravity` only\n  afterwards.",
    "mtime": 1790771279.170802,
    "runs": [
@@ -350,7 +350,7 @@
     },
     {
      "name": "sqwm_c_s1",
-     "mtime": 1790780961.152001,
+     "mtime": 1790783072.7280507,
      "config": {
       "name": "sqwm_c_s1",
       "seed": 1,
@@ -396,10 +396,10 @@
      "experiment": "experiment_seaquest_world_model",
      "game": "seaquest",
      "selected": {
-      "round": 5,
+      "round": 7,
       "greedy": false,
-      "base_rescues": 5.4375,
-      "base_score": 20547.5
+      "base_rescues": 12.1875,
+      "base_score": 66106.5625
      },
      "rounds": [
       {
@@ -467,28 +467,130 @@
        "divers_greedy": 48.03125,
        "score_sample": 20547.5,
        "score_greedy": 21102.5
+      },
+      {
+       "round": 6,
+       "update": 7,
+       "frames": null,
+       "rescues_sample": 7.9375,
+       "rescues_greedy": 7.96875,
+       "divers_sample": 58.46875,
+       "divers_greedy": 58.5625,
+       "score_sample": 35744.0625,
+       "score_greedy": 36713.125
+      },
+      {
+       "round": 7,
+       "update": 8,
+       "frames": null,
+       "rescues_sample": 12.1875,
+       "rescues_greedy": 12.03125,
+       "divers_sample": 82.8125,
+       "divers_greedy": 81.40625,
+       "score_sample": 66106.5625,
+       "score_greedy": 65358.75
       }
      ],
      "rounds_total": 8,
      "kind": "full",
      "evals": [],
-     "gevals": [],
-     "process": [
+     "gevals": [
       {
-       "elapsed_s": 6964,
-       "cmd": "experiment_seaquest_world_model.py --name sqwm_c_s1 --seed 1 --imag_len 64 --ppo_updates 400"
+       "file": "runs/sqwm_c_s1/gravity_eval.json",
+       "ckpt": "runs/sqwm_c_s1/best.pkl",
+       "round": 6,
+       "greedy": true,
+       "games": 32,
+       "seed": 12345,
+       "game": "seaquest",
+       "base_rescues": 7.875,
+       "base_score": 35477.8125,
+       "base_divers": 58.84375,
+       "gravity_rescues": 3.46875,
+       "gravity_score": 11877.8125,
+       "gravity_divers": 48.96875,
+       "gravity_games_2": 30,
+       "gravity_per_game": [
+        5,
+        2,
+        6,
+        0,
+        4,
+        1,
+        4,
+        2,
+        2,
+        2,
+        2,
+        3,
+        5,
+        3,
+        8,
+        4,
+        6,
+        2,
+        4,
+        4,
+        3,
+        2,
+        2,
+        2,
+        6,
+        3,
+        5,
+        5,
+        3,
+        6,
+        3,
+        2
+       ],
+       "base_per_game": [
+        11,
+        5,
+        5,
+        10,
+        12,
+        11,
+        6,
+        9,
+        7,
+        9,
+        8,
+        7,
+        11,
+        5,
+        8,
+        6,
+        7,
+        7,
+        13,
+        9,
+        5,
+        8,
+        10,
+        7,
+        9,
+        6,
+        8,
+        10,
+        8,
+        4,
+        5,
+        6
+       ],
+       "mtime": 1790783072.7280507
       }
      ],
-     "running": true,
-     "activity": "round 6: PPO update 200/400",
+     "process": [],
+     "running": false,
      "checkpoint": {
-      "path": "runs/sqwm_c_s1/round5.pkl",
-      "label": "round 5 (latest)"
+      "path": "runs/sqwm_c_s1/round7.pkl",
+      "label": "round 7 (latest)"
      }
     }
    ],
    "status": "goal_met",
-   "updated": 1790780961.152001,
+   "updated": 1790783072.7280507,
    "video": {
     "run": "sqwm_c",
     "label": "selected checkpoint (evaluated)",
