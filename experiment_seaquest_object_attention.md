@@ -45,4 +45,12 @@ CUDA_VISIBLE_DEVICES=5 uv run experiment_seaquest_object_attention.py --name sq_
 
 ## Results
 
-Run in progress.
+- First run `sq_att_a` (stopped at about update 550, 144M frames; run directory removed): **input bug**.
+  The objects' orientation was fed raw (0 / 90 / 270 degrees) next to features in [-1, 1], and the
+  oxygen-trend feature reached -16 at resets. Base-game evaluations at updates 250 / 500: 0 rescues,
+  6.5-6.9 divers, score 70-220 per game, behind S1's MLP at the same number of frames. Fixed in the
+  code: orientation is encoded as (sin, cos) and the oxygen trend is clipped to [-1, 1]. (S1's MLP
+  scaling had the same orientation issue; `seaquest_common.obs_features_v2` fixes it for new
+  experiments.)
+- The fixed agent is used in S5 (`experiment_seaquest_diver_curriculum.py --agent attention`), which
+  adds a start-state curriculum. S3 without the curriculum was not rerun yet.

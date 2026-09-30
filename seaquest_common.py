@@ -73,6 +73,27 @@ def obs_features(obs):
 OBS_DIM = FRAME_STACK * FRAME_DIM
 
 
+def _frame_scale_v2():
+    """As `_frame_scale`, but orientation (raw values 0 / 90 / 270 degrees) is scaled to [0, 1].
+
+    Version 1 (used by S1 and S2, kept for reproducibility) passed orientation unscaled.
+    """
+    s = np.asarray(FRAME_SCALE).copy()
+    for start, n in ((0, 1), (8, 4), (40, 25), (240, 5)):
+        s[start + 7 * n:start + 8 * n] = 270.0
+    return jnp.asarray(s)
+
+
+FRAME_SCALE_V2 = _frame_scale_v2()
+
+
+def obs_features_v2(obs):
+    """Like `obs_features` with orientation scaled to [0, 1] (use for new experiments)."""
+    x = obs / FRAME_SCALE_V2
+    x = x.at[..., SCORE_IDX].set(0.0)
+    return x.reshape(*x.shape[:-2], -1)
+
+
 def game_state(st):
     """SeaquestState inside the ObjectCentricWrapper state."""
     return st.atari_state.env_state

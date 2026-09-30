@@ -43,6 +43,12 @@ N_TOK = len(TYPES)  # 35 objects + 1 global token
 TOK_DIM = N_TYPES + 12
 
 
+def _orient(deg):
+    """Orientation in degrees (raw values 0 / 90 / 270) -> (sin, cos)."""
+    r = jnp.deg2rad(deg)
+    return jnp.sin(r), jnp.cos(r)
+
+
 def _fields(frame, start, n):
     """(..., 284) -> dict of (..., n) arrays for the 8 object fields."""
     names = ("x", "y", "w", "h", "active", "vid", "state", "orient")
@@ -58,17 +64,19 @@ def tokens(obs):
         c, p = _fields(cur, start, n), _fields(prev, start, n)
         act = (c["active"] > 0).astype(jnp.float32)
         moving = act * (p["active"] > 0)
+        o_sin, o_cos = _orient(c["orient"])
         f = jnp.stack([
             (c["x"] - px) / 80.0, (c["y"] - py) / 100.0, c["x"] / 160.0, c["y"] / 210.0,
             moving * jnp.clip(c["x"] - p["x"], -8, 8) / 8.0, moving * jnp.clip(c["y"] - p["y"], -8, 8) / 8.0,
-            c["w"] / 16.0, c["h"] / 16.0, c["orient"], c["vid"] / 5.0, act, c["state"]], axis=-1)
+            c["w"] / 16.0, c["h"] / 16.0, o_sin, o_cos, c["vid"] / 5.0, act], axis=-1)
         feats.append(f * act[..., None])
         masks.append(act)
+    p_sin, p_cos = _orient(cur[..., 7])
     g = jnp.stack([cur[..., sc.OXYGEN_IDX] / 64.0, cur[..., sc.DIVERS_IDX] / 6.0, cur[..., sc.LIVES_IDX] / 4.0,
-                   cur[..., 0] / 160.0, cur[..., 1] / 210.0, cur[..., 7],
-                   (cur[..., sc.OXYGEN_IDX] - prev[..., sc.OXYGEN_IDX]) / 4.0,
+                   cur[..., 0] / 160.0, cur[..., 1] / 210.0, p_sin, p_cos,
+                   jnp.clip(cur[..., sc.OXYGEN_IDX] - prev[..., sc.OXYGEN_IDX], -1, 1),
                    (cur[..., sc.DIVERS_IDX] >= 6).astype(jnp.float32),
-                   (cur[..., sc.OXYGEN_IDX] < 16).astype(jnp.float32), jnp.zeros_like(cur[..., 0]),
+                   (cur[..., sc.OXYGEN_IDX] < 16).astype(jnp.float32),
                    jnp.zeros_like(cur[..., 0]), jnp.ones_like(cur[..., 0])], axis=-1)[..., None, :]
     x = jnp.concatenate(feats + [g], axis=-2)  # (..., N_TOK, 12)
     onehot = jnp.broadcast_to(jax.nn.one_hot(jnp.asarray(TYPES), N_TYPES), x.shape[:-1] + (N_TYPES,))

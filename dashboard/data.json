@@ -1,7 +1,7 @@
 {
- "generated": 1790724849.7706423,
- "generated_iso": "2026-09-30T01:34:09",
- "git": "3728581 Seaquest: goal (gravity mod held out), PPO with shaped reward (S1), random currents (S2), dashboard support",
+ "generated": 1790727025.9325902,
+ "generated_iso": "2026-09-30T02:10:25",
+ "git": "4b43489 Seaquest S3 (object-attention agent + potential shaping) and S4 (S3 + random currents); S1/S2 stopped",
  "target": 10.0,
  "sq_target": 2.0,
  "experiments": [
@@ -261,61 +261,12 @@
    "summary_source": "md",
    "goal": "An agent trained on the base Seaquest game only that, with the held-out `gravity` mod, collects 6\ndivers and surfaces with them at least twice per game (`successful_rescues` >= 2), on average over\nat least 10 games.",
    "question": "Does an object-centric attention agent, which sees every object relative to its own submarine and\nshares weights across all slots of an object type, learn the rescue behaviour in the base game much\nfaster than an MLP on the flat observation? Is it robust to `gravity` without any perturbation during\ntraining?",
-   "results": "Run in progress.",
+   "results": "- First run `sq_att_a` (stopped at about update 550, 144M frames; run directory removed): **input bug**.\n  The objects' orientation was fed raw (0 / 90 / 270 degrees) next to features in [-1, 1], and the\n  oxygen-trend feature reached -16 at resets. Base-game evaluations at updates 250 / 500: 0 rescues,\n  6.5-6.9 divers, score 70-220 per game, behind S1's MLP at the same number of frames. Fixed in the\n  code: orientation is encoded as (sin, cos) and the oxygen trend is clipped to [-1, 1]. (S1's MLP\n  scaling had the same orientation issue; `seaquest_common.obs_features_v2` fixes it for new\n  experiments.)\n- The fixed agent is used in S5 (`experiment_seaquest_diver_curriculum.py --agent attention`), which\n  adds a start-state curriculum. S3 without the curriculum was not rerun yet.",
    "setup": "- Tokens: player, 4 divers, 12 sharks, 12 enemy subs, surface sub, torpedo, 4 enemy missiles (type\n  one-hot, position relative to the submarine and absolute, velocity from the last two frames, size,\n  orientation, visual id, active flag) and one global token (oxygen, divers carried, lives, own\n  position, oxygen trend). Inactive objects are masked.\n- Network: linear embedding (d = 64), 2 pre-LayerNorm self-attention blocks (4 heads), readout of\n  the global token, the player token and a masked mean into 256-unit policy and value heads.\n- Reward: S1's shaped reward (diver bonus 2, rescue bonus 10, no surface or life penalty) +\n  gamma * Phi(s') - Phi(s) with Phi = height * (2 * [6 divers] + 1 * [oxygen < 16]), where height is\n  0 at the bottom and 1 at the surface, and Phi = 0 at terminals.\n- PPO: 512 base games, 128 steps, 4000 updates, lr 3e-4, entropy 0.01, otherwise as S1.\n- Selection on the base game (most rescues, then score). `gravity` only afterwards.",
-   "mtime": 1790724189.949537,
-   "runs": [
-    {
-     "name": "sq_att_a",
-     "mtime": 1790724802.427242,
-     "config": {
-      "name": "sq_att_a",
-      "seed": 0,
-      "num_envs": 512,
-      "T": 128,
-      "updates": 4000,
-      "epochs": 4,
-      "minibatches": 8,
-      "lr": 0.0003,
-      "gamma": 0.995,
-      "lam": 0.95,
-      "clip": 0.2,
-      "ent_coef": 0.01,
-      "vf_coef": 0.5,
-      "max_grad_norm": 0.5,
-      "diver_bonus": 2.0,
-      "rescue_bonus": 10.0,
-      "life_penalty": 0.0,
-      "surface_penalty": 0.0,
-      "eval_every": 250,
-      "eval_games": 32,
-      "eval_max_steps": 20000,
-      "c_surf": 2.0,
-      "c_ox": 1.0,
-      "ox_low": 16.0,
-      "experiment": "experiment_seaquest_object_attention",
-      "game": "seaquest"
-     },
-     "experiment": "experiment_seaquest_object_attention",
-     "game": "seaquest",
-     "rounds": [],
-     "rounds_total": null,
-     "kind": "started",
-     "evals": [],
-     "gevals": [],
-     "process": [
-      {
-       "elapsed_s": 458,
-       "cmd": "experiment_seaquest_object_attention.py --name sq_att_a"
-      }
-     ],
-     "running": true,
-     "activity": "PPO update 100/4000 \u00b7 26.5M frames",
-     "checkpoint": null
-    }
-   ],
-   "status": "running",
-   "updated": 1790724802.427242,
+   "mtime": 1790726705.1152272,
+   "runs": [],
+   "status": "no_runs",
+   "updated": 1790726705.1152272,
    "video": null
   },
   {
@@ -329,15 +280,34 @@
    "summary_source": "md",
    "goal": "An agent trained on the base Seaquest game only that, with the held-out `gravity` mod, collects 6\ndivers and surfaces with them at least twice per game (`successful_rescues` >= 2), on average over\nat least 10 games.",
    "question": "Do random perturbations of the submarine's own motion during training make the object-attention\nagent robust to changed submarine dynamics at test time, compared with S3 trained without them?",
-   "results": "Run in progress.",
+   "results": "- First run `sq_attcur_a` (stopped at about update 550, 144M frames; run directory removed): **input bug**.\n  The objects' orientation was fed raw (0 / 90 / 270 degrees) next to features in [-1, 1], and the\n  oxygen-trend feature reached -16 at resets. Base-game evaluations at updates 250 / 500: 0 rescues,\n  6.5-6.9 divers, score 70-220 per game, behind S1's MLP at the same number of frames. Fixed in the\n  code: orientation is encoded as (sin, cos) and the oxygen trend is clipped to [-1, 1]. (S1's MLP\n  scaling had the same orientation issue; `seaquest_common.obs_features_v2` fixes it for new\n  experiments.)\n- The fixed agent is used in S5 (`experiment_seaquest_diver_curriculum.py --agent attention`), which\n  adds a start-state curriculum. S4 without the curriculum was not rerun yet.",
    "setup": "As S3, plus currents as in S2: per game, with probability 0.25 no current, otherwise a direction\nuniformly from 8 compass directions and a strength q ~ U(0, 1) (probability of a 1 px displacement\nafter each agent step). A new game draws a new current.",
    "mtime": 1790724384.784185,
+   "runs": [],
+   "status": "no_runs",
+   "updated": 1790724384.784185,
+   "video": null
+  },
+  {
+   "module": "experiment_seaquest_diver_curriculum",
+   "py": "experiment_seaquest_diver_curriculum.py",
+   "md": "experiment_seaquest_diver_curriculum.md",
+   "game": "seaquest",
+   "title": "Experiment S5: start-state curriculum on the divers carried (with random currents)",
+   "number": "S5",
+   "summary": "The agents so far picked up 6-9 divers per game but almost never held 6 at once, so they rarely saw\nthe rescue reward. Here, at the start of each game and after each lost life in training, the divers\ncarried are set to a random 0-6 with probability 0.5 (a base-game start-state curriculum). S2's random\ncurrents are also applied. Evaluation and selection use the unmodified base game.",
+   "summary_source": "md",
+   "goal": "An agent trained on the base Seaquest game only that, with the held-out `gravity` mod, collects 6\ndivers and surfaces with them at least twice per game (`successful_rescues` >= 2), on average over\nat least 10 games.",
+   "question": "Does starting training from states that already carry several divers make the long-horizon rescue\nbehaviour learnable, and does it then transfer, together with random currents, to the held-out\n`gravity` game?",
+   "results": "Runs in progress.",
+   "setup": "- Curriculum: at every game start and after every lost life, with probability 0.5, divers carried\n  := k ~ U{0..6}. The pickup bonus is not paid for these gifted divers.\n- Currents (as S2/S4): per game, with probability 0.25 none, otherwise one of 8 directions with a\n  per-step probability q ~ U(0, 1) of a 1 px displacement.\n- Reward: S3's (S1's shaped reward with diver bonus 2 and rescue bonus 10, plus potential shaping\n  towards the surface with 6 divers or with oxygen < 16).\n- Agents: `--agent attention` (S3's object-attention agent, orientation bug fixed) and `--agent mlp`\n  (S1's 2 x 512 MLP on `obs_features_v2`).\n- PPO: 512 envs, 128 steps, 4000 updates (1.05B frames), lr 3e-4, entropy 0.01, gamma 0.995.\n- Every 250 updates: 32 full games of the unmodified base game from its normal start. Selection:\n  most base-game rescues, then score.",
+   "mtime": 1790726739.598578,
    "runs": [
     {
-     "name": "sq_attcur_a",
-     "mtime": 1790724810.2352107,
+     "name": "sq_dc_att",
+     "mtime": 1790727008.544867,
      "config": {
-      "name": "sq_attcur_a",
+      "name": "sq_dc_att",
       "seed": 0,
       "num_envs": 512,
       "T": 128,
@@ -361,13 +331,16 @@
       "c_surf": 2.0,
       "c_ox": 1.0,
       "ox_low": 16.0,
+      "agent": "attention",
+      "p_curriculum": 0.5,
+      "currents": 1,
       "p_none": 0.25,
       "q_min": 0.0,
       "q_max": 1.0,
-      "experiment": "experiment_seaquest_attention_currents",
+      "experiment": "experiment_seaquest_diver_curriculum",
       "game": "seaquest"
      },
-     "experiment": "experiment_seaquest_attention_currents",
+     "experiment": "experiment_seaquest_diver_curriculum",
      "game": "seaquest",
      "rounds": [],
      "rounds_total": null,
@@ -376,17 +349,71 @@
      "gevals": [],
      "process": [
       {
-       "elapsed_s": 458,
-       "cmd": "experiment_seaquest_attention_currents.py --name sq_attcur_a"
+       "elapsed_s": 20,
+       "cmd": "experiment_seaquest_diver_curriculum.py --agent attention --name sq_dc_att"
       }
      ],
      "running": true,
-     "activity": "PPO update 100/4000 \u00b7 26.5M frames",
+     "activity": "round 0: collecting / evaluating",
+     "checkpoint": null
+    },
+    {
+     "name": "sq_dc_mlp",
+     "mtime": 1790727008.5798674,
+     "config": {
+      "name": "sq_dc_mlp",
+      "seed": 0,
+      "num_envs": 512,
+      "T": 128,
+      "updates": 4000,
+      "epochs": 4,
+      "minibatches": 8,
+      "lr": 0.0003,
+      "gamma": 0.995,
+      "lam": 0.95,
+      "clip": 0.2,
+      "ent_coef": 0.01,
+      "vf_coef": 0.5,
+      "max_grad_norm": 0.5,
+      "diver_bonus": 2.0,
+      "rescue_bonus": 10.0,
+      "life_penalty": 0.0,
+      "surface_penalty": 0.0,
+      "eval_every": 250,
+      "eval_games": 32,
+      "eval_max_steps": 20000,
+      "c_surf": 2.0,
+      "c_ox": 1.0,
+      "ox_low": 16.0,
+      "agent": "mlp",
+      "p_curriculum": 0.5,
+      "currents": 1,
+      "p_none": 0.25,
+      "q_min": 0.0,
+      "q_max": 1.0,
+      "experiment": "experiment_seaquest_diver_curriculum",
+      "game": "seaquest"
+     },
+     "experiment": "experiment_seaquest_diver_curriculum",
+     "game": "seaquest",
+     "rounds": [],
+     "rounds_total": null,
+     "kind": "started",
+     "evals": [],
+     "gevals": [],
+     "process": [
+      {
+       "elapsed_s": 20,
+       "cmd": "experiment_seaquest_diver_curriculum.py --agent mlp --name sq_dc_mlp"
+      }
+     ],
+     "running": true,
+     "activity": "round 0: collecting / evaluating",
      "checkpoint": null
     }
    ],
    "status": "running",
-   "updated": 1790724810.2352107,
+   "updated": 1790727008.5798674,
    "video": null
   },
   {
