@@ -121,8 +121,12 @@ class SeaquestWM(nn.Module):
         f = slot_fields(stack)  # (B, 4, 35)
         act = f["active"]
         r = jnp.deg2rad(f["orient"])
+        # position relative to the submarine (slot 0) in every frame: collisions (pickups, deaths,
+        # kills) depend on relative positions, which attention over absolute coordinates finds hard
+        rx = (f["x"] - f["x"][..., :1]) / 80.0 * act
+        ry = (f["y"] - f["y"][..., :1]) / 100.0 * act
         per = jnp.stack([f["x"] / 160.0 * act, f["y"] / 210.0 * act, act, jnp.sin(r) * act, jnp.cos(r) * act,
-                         f["vid"] / 5.0 * act], axis=-1)  # (B, 4, 35, 6)
+                         f["vid"] / 5.0 * act, rx, ry], axis=-1)  # (B, 4, 35, 8)
         per = per.transpose(0, 2, 1, 3).reshape(stack.shape[0], N_OBJ, -1)  # (B, 35, 24)
         mov = act[:, -1] * act[:, -2]
         vel = jnp.stack([jnp.clip(f["x"][:, -1] - f["x"][:, -2], -8, 8) / 8.0 * mov,
@@ -153,7 +157,8 @@ def wm_loss(model, params, stack, action, nxt, score_d, rescue, life_lost, cfg):
     obj, glb = model.apply(params, stack, action)
     c, n, orient_cls = targets(stack, nxt)
     act_c, act_n = c["active"] > 0, n["active"] > 0
-    l_active = optax.sigmoid_binary_cross_entropy(obj[..., 0], act_n.astype(jnp.float32)).mean()
+    w_act = jnp.where(act_c != act_n, cfg.change_weight, 1.0)  # despawns (pickups, kills) and spawns are rare
+    l_active = jnp.mean(w_act * optax.sigmoid_binary_cross_entropy(obj[..., 0], act_n.astype(jnp.float32)))
     moving, spawn = act_c & act_n, (~act_c) & act_n
     d_tgt = jnp.stack([(n["x"] - c["x"]) / 8.0, (n["y"] - c["y"]) / 8.0], -1)
     a_tgt = jnp.stack([n["x"] / 160.0, n["y"] / 210.0], -1)
@@ -168,8 +173,9 @@ def wm_loss(model, params, stack, action, nxt, score_d, rescue, life_lost, cfg):
     div_l, liv_l = glb[:, o:o + N_DIV_CLS], glb[:, o + N_DIV_CLS:o + N_DIV_CLS + N_LIVES_CLS]
     sc_p, res_p, life_p = glb[:, -3], glb[:, -2], glb[:, -1]
     l_oxy = jnp.mean((oxy - nxt[:, sc.OXYGEN_IDX] / 64.0) ** 2) * 100.0
-    l_div = optax.softmax_cross_entropy_with_integer_labels(
-        div_l, jnp.clip(nxt[:, sc.DIVERS_IDX] + 1, 0, N_DIV_CLS - 1).astype(jnp.int32)).mean()
+    w_div = jnp.where(nxt[:, sc.DIVERS_IDX] != stack[:, -1, sc.DIVERS_IDX], cfg.div_change_weight, 1.0)
+    l_div = jnp.mean(w_div * optax.softmax_cross_entropy_with_integer_labels(
+        div_l, jnp.clip(nxt[:, sc.DIVERS_IDX] + 1, 0, N_DIV_CLS - 1).astype(jnp.int32)))
     l_liv = optax.softmax_cross_entropy_with_integer_labels(
         liv_l, jnp.clip(nxt[:, sc.LIVES_IDX], 0, N_LIVES_CLS - 1).astype(jnp.int32)).mean()
     l_sc = jnp.mean((sc_p - symlog(score_d)) ** 2)
@@ -201,13 +207,23 @@ def wm_loss(model, params, stack, action, nxt, score_d, rescue, life_lost, cfg):
     return loss, aux
 
 
-def wm_predict(model, params, stack, action, key):
-    """Sample the next frame and events. Returns (next_frame (B, 284), score_delta, rescue, life_lost)."""
+def wm_predict(model, params, stack, action, key, event_weight=5.0, change_weight=10.0, div_change_weight=10.0):
+    """Sample the next frame and events. Returns (next_frame (B, 284), score_delta, rescue, death).
+
+    Deaths are sampled from the *calibrated* probability: training weights positive events by
+    `event_weight`, which multiplies the predicted odds by that factor, so log(event_weight) is
+    subtracted from the logit before sampling. (Thresholding the inflated probability at 0.5 gave
+    about one false death per 110 imagined steps.) The same correction is applied to the existence of
+    each slot (changes are weighted `change_weight` in training) and to the divers carried (changes
+    weighted `div_change_weight`); without it the model predicted about 7x too many diver pickups.
+    """
+    key, k_death, k_div = jax.random.split(key, 3)
     obj, glb = model.apply(params, stack, action)
     cur = stack[:, -1]
     c = {k: v[:, 0] for k, v in slot_fields(cur[:, None]).items()}
-    p_act = jax.nn.sigmoid(obj[..., 0])
     act_c = c["active"] > 0
+    # calibrated existence: a change of state (spawn or despawn) was up-weighted in training
+    p_act = jax.nn.sigmoid(obj[..., 0] + jnp.where(act_c, 1.0, -1.0) * jnp.log(change_weight))
     spawn = jax.random.uniform(key, p_act.shape) < p_act
     act_n = jnp.where(act_c, p_act > 0.5, spawn)
     act_n = act_n.at[:, 0].set(True)  # the player slot is always active
@@ -216,16 +232,22 @@ def wm_predict(model, params, stack, action, key):
     x = jnp.clip(x, 0, 160) * act_n
     y = jnp.clip(y, 0, 210) * act_n
     fields = dict(x=x, y=y, w=c["w"], h=c["h"], active=act_n.astype(jnp.float32),
-                  vid=jnp.argmax(obj[..., 8:14], -1).astype(jnp.float32) * act_n,
+                  vid=jnp.where(act_n, jnp.argmax(obj[..., 8:14], -1).astype(jnp.float32), c["vid"]),
                   state=jnp.zeros_like(x), orient=ORIENTS[jnp.argmax(obj[..., 5:8], -1)] * act_n)
     nxt = set_slot_fields(cur, fields)
     o = 1
     score_d = jnp.maximum(jnp.round(symexp(glb[:, -3])), 0.0)
     nxt = nxt.at[:, sc.OXYGEN_IDX].set(jnp.clip(jnp.round(glb[:, 0] * 64.0), 0, 64))
-    nxt = nxt.at[:, sc.DIVERS_IDX].set(jnp.argmax(glb[:, o:o + N_DIV_CLS], -1) - 1.0)
+    div_logits = glb[:, o:o + N_DIV_CLS]
+    same = jax.nn.one_hot(jnp.clip(cur[:, sc.DIVERS_IDX] + 1, 0, N_DIV_CLS - 1).astype(jnp.int32), N_DIV_CLS)
+    div_logits = div_logits - (1.0 - same) * jnp.log(div_change_weight)  # calibrated divers carried
+    # sampled: the expected number of imagined changes matches the data (argmax gave recall 0.15)
+    nxt = nxt.at[:, sc.DIVERS_IDX].set(jax.random.categorical(k_div, div_logits) - 1.0)
     nxt = nxt.at[:, sc.LIVES_IDX].set(jnp.argmax(glb[:, o + N_DIV_CLS:o + N_DIV_CLS + N_LIVES_CLS], -1) * 1.0)
     nxt = nxt.at[:, sc.SCORE_IDX].set(cur[:, sc.SCORE_IDX] + score_d)
-    return nxt, score_d, glb[:, -2] > 0, glb[:, -1] > 0
+    p_death = jax.nn.sigmoid(glb[:, -1] - jnp.log(event_weight))
+    death = jax.random.uniform(k_death, p_death.shape) < p_death
+    return nxt, score_d, glb[:, -2] > 0, death
 
 
 # ----------------------------------------------------------------------------- real data
@@ -359,17 +381,28 @@ def diver_bookkeeping(cur, nxt, lost, ist):
     In Seaquest a rescue is the step where 6 divers drop to 5 at the surface; afterwards the game counts
     the divers down one per step while it converts oxygen into points. Pickups are only counted above
     the highest number of divers reached so far in the episode (`m`), so an imagined lose-and-regain
-    oscillation pays nothing. During the post-rescue countdown (`count`) no pickups or second rescue
+    oscillation pays nothing, and only when there is evidence in the frames: a diver is active right
+    next to the submarine (a first version without this check was exploited: the agent hovered near
+    the surface where the world model predicted too many pickups). The held count `m` only rises with
+    such evidence, and a rescue requires `m` >= 6, so a hallucinated jump of the counter to 6 cannot
+    be cashed in. During the post-rescue countdown (`count`) no pickups or second rescue
     are counted. Returns (rescue, picked, m, count).
     """
     d0 = jnp.clip(cur[:, sc.DIVERS_IDX], 0, 6)
     d1 = jnp.clip(nxt[:, sc.DIVERS_IDX], 0, 6)
+    # evidence for a pickup: a diver is active right next to the submarine in the current frame
+    c = {k: v[:, 0] for k, v in slot_fields(cur[:, None]).items()}
+    dv = slice(1, 5)
+    near = ((c["active"][:, dv] > 0) & (jnp.abs(c["x"][:, dv] - c["x"][:, :1]) < 20)
+            & (jnp.abs(c["y"][:, dv] - c["y"][:, :1]) < 16))
+    evidence = jnp.any(near, axis=-1)
     count = ist["count"]
-    rescue = (d0 >= 6) & (d1 <= 5) & (nxt[:, sc.PLAYER_Y_IDX] <= 50) & ~lost & ~count
+    # a rescue needs 6 divers legitimately held (`m` only rises with evidence)
+    rescue = (ist["m"] >= 6) & (d0 >= 6) & (d1 <= 5) & (nxt[:, sc.PLAYER_Y_IDX] <= 50) & ~lost & ~count
     in_count = count | rescue
-    picked = jnp.where(in_count, 0.0, jnp.maximum(d1 - ist["m"], 0.0)) * ~lost
-    m = jnp.where(in_count, d1, jnp.maximum(ist["m"], d1))
-    return rescue, picked, m, in_count & (d1 > 0)
+    gain = jnp.maximum(d1 - ist["m"], 0.0) * ~lost * evidence * ~in_count
+    m = jnp.where(in_count, d1, jnp.minimum(ist["m"] + gain, jnp.maximum(ist["m"], d1)))
+    return rescue, gain, m, in_count & (d1 > 0)
 
 
 def make_imagination(model, cfg):
@@ -386,7 +419,8 @@ def make_imagination(model, cfg):
 
     def step(wm_params, starts, stack, ist, action, key):
         k_wm, k_reset = jax.random.split(key)
-        nxt, score_d, _, lost = wm_predict(model, wm_params, stack, action, k_wm)
+        nxt, score_d, _, lost = wm_predict(model, wm_params, stack, action, k_wm, cfg.event_weight,
+                                           cfg.change_weight, cfg.div_change_weight)
         cur = stack[:, -1]
         rescue, picked, m, count = diver_bookkeeping(cur, nxt, lost, ist)
         score_d = jnp.minimum(score_d, 90.0)
@@ -494,6 +528,8 @@ def get_parser():
     ap.add_argument("--wm_steps", type=int, default=20000)
     ap.add_argument("--wm_lr", type=float, default=3e-4)
     ap.add_argument("--event_weight", type=float, default=5.0)
+    ap.add_argument("--div_change_weight", type=float, default=10.0, help="WM loss weight of diver-count changes")
+    ap.add_argument("--change_weight", type=float, default=10.0, help="WM loss weight of slots whose existence changes")
     ap.add_argument("--wm_only", type=int, default=0, help="only collect round-0 data and fit the world model")
     ap.add_argument("--imag_len", type=int, default=256)
     ap.add_argument("--p_imag_gift", type=float, default=0.5)

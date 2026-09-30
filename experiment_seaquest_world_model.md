@@ -68,7 +68,55 @@ the agent collected 1.12 imagined rescues per game per 64 imagined steps, but 0 
 change. Fix: rewards are computed from the predicted state change (rescue = 6 divers -> 0 without a
 death; signed diver changes; kill score capped at 90).
 
-Full runs with the fix:
+Further fixes found while running (each time the runs were restarted and their directories
+removed):
+
+1. The rescue rule "6 divers -> 0" never fired. In the real game a rescue is the step where 6 divers
+   drop to 5 at the surface, and the divers are then counted down one per step while oxygen turns
+   into points. The signed diver reward would also have punished that countdown. New rule: rescue =
+   6 -> 5 at the surface (player y <= 50) without a death. Pickups are paid only above the highest
+   count reached in the imagined episode, so a lose-and-regain pays nothing.
+2. The running maximum was reset to 0 at a rescue, so the countdown values (5, 4, ...) were paid as
+   pickups: 7.4 imagined pickups and 1.0 rescues per 64 imagined steps, with 0 real rescues. Fix: a
+   countdown flag; while it runs, no pickups and no second rescue are counted. The bookkeeping
+   (`diver_bookkeeping`) was validated on 3000 real steps of a real game: it counts 7 / 7 rescues
+   and 43 / 44 pickups (the missed one re-collects a diver lost at a surfacing, which is
+   deliberately not paid).
+3. Deaths were taken as "predicted probability > 0.5". Because death events are up-weighted 5x in
+   training, this gave about 0.9 % false deaths per imagined step (an imagined life ended after about
+   110 steps on average, versus about 180 real steps). The agent could not tell real dangers from
+   random false alarms (after 3 rounds: 0 real rescues, about 5 divers and 150 points per game,
+   3 lives lost within 550-870 steps). Fix: deaths are sampled from the calibrated probability
+   (logit - log 5).
+4. After round 1 the agent sat at the surface 67 % of the time in the real game (0.08 pickups per 64
+   steps) but was credited with 1.2 imagined pickups per 64 steps from the same real states. In
+   imagination it hovered just below the surface (y 50-60, where real pickups from the top diver lane
+   are possible but rare), and the world model predicted far too many diver collisions there.
+   Diagnostics (all base game): diving from the surface is predicted correctly; one-step action
+   distributions on real vs predicted frames differ by only 0.045 (total variation); inactive enemy
+   slots were decoded with visual id 0 instead of 4 / 5 (masked everywhere, fixed anyway). Fix: a
+   pickup is only rewarded with evidence in the predicted frames (a diver that was active next to the
+   submarine disappears), and diver-count changes are weighted 10x in the world-model loss. The
+   bookkeeping still counts 43 / 44 real pickups and 7 / 7 real rescues on a real game.
+5. With that check, imagined pickups dropped to exactly 0 while imagined rescues stayed high (0.32 per
+   game per 64 steps). On real pickup transitions the world model predicted the diver count +1 in 56 %
+   of cases, but the picked-up diver disappearing in 0 % (real frames: 98.6 %): despawns are rare, so
+   the existence loss was dominated by "stays active". Fixes: slots whose existence changes (pickups,
+   kills, spawns) are weighted 10x in the loss; the pickup evidence is a diver right next to the
+   submarine in the current frame; the held count only rises with evidence, and a rescue requires
+   a legitimately held 6 (so a hallucinated jump of the counter to 6 cannot be cashed in). The
+   bookkeeping still counts 43 / 44 real pickups and 7 / 7 real rescues.
+6. Still 4-5x more imagined than real pickups from the agent's own real states (e.g. 1.09 vs 0.24 per
+   64 steps). One step ahead on the agent's own real states only 12 % of the model's rewarded pickups
+   were real (recall 86 %): the 10x up-weighting of changes in the loss inflates the predicted odds of
+   a change, the same issue as with deaths. With calibrated logits (subtract log 10 for changes of the
+   divers carried and of slot existence) and argmax decoding: precision 64 %, recall 15 %; with
+   calibrated *sampling*: 627 predicted vs 335 real pickups, precision 16 %. So the model could not
+   discriminate pickup states well. Change: each slot token also gets its position relative to the
+   submarine in all 4 frames (collisions depend on relative positions), and the divers carried are
+   sampled from the calibrated distribution. The runs were restarted.
+
+Full runs with all fixes:
 
 ```
 CUDA_VISIBLE_DEVICES=4 uv run experiment_seaquest_world_model.py --name sqwm_b
@@ -77,4 +125,14 @@ CUDA_VISIBLE_DEVICES=5 uv run experiment_seaquest_world_model.py --name sqwm_c -
 
 ## Results
 
+Base-game evaluation after each round (32 real games from the normal start, sampled / greedy):
+
+| run | round | rescues per game | divers per game | score |
+|---|---|---|---|---|
+| `sqwm_b` (imagined episodes <= 256 steps, 300 PPO updates / round) | 0 | 0.00 / 0.00 | 5.2 / 5.0 | 212 / 223 |
+| | 1 | 0.09 / 0.09 | 7.6 / 9.0 | 422 / 532 |
+| `sqwm_c` (imagined episodes <= 64 steps, 400 PPO updates / round) | 0 | 0.00 / 0.00 | 5.9 / 5.0 | 274 / 207 |
+| | 1 | **1.38 / 1.34** | 16.8 / 17.9 | 2909 / 2882 |
+
+After the fixes above, the agent trained only in imagination rescues 6 divers in the real base game.
 Runs in progress.
